@@ -79,6 +79,52 @@ class NaiveCoa:
             start_idx = end_idx
 
 
+class Cola:
+    def __init__(self, size):
+        """"
+        this is a naive implementation of cache-oblivious arrays
+        """
+        self.size = size
+        self.n_arrays = math.ceil(math.log(self.size, base=2)) + 1
+        self.array = np.empty(2 ** (self.n_arrays + 1), dtype=int)
+        self.has_item = np.zeros_like(self.array, dtype=bool)
+        self.n_items = 0
+
+    def search(self, item):
+        raise NotImplementedError
+
+    @staticmethod
+    def get_insert_idx(array, length):
+        ones_idx = 0
+        zeros_idx = length - 1
+        if array[ones_idx] == 0:
+            return 0
+
+        while True:
+            mid_idx = (ones_idx + zeros_idx) // 2
+            if mid_idx:
+                ones_idx = mid_idx
+            else:
+                zeros_idx = mid_idx
+
+            if ones_idx ==
+
+
+    def insert(self, item):
+        self.n_items += 1
+        if self.n_items >= self.size:
+            raise BufferError('too much shit')
+
+        start_idx = 0
+        array_size = 2
+        for i in range(self.n_arrays):
+            array_size = array_size << 2
+            insert_idx = np.argwhere(self.has_item[start_idx:start_idx+(array_size >> 2)])[-1]
+            if insert_idx >= :
+                co
+            start_idx += array_size
+
+
 def main():
     raise NotImplementedError
 
