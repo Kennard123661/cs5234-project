@@ -10,26 +10,25 @@ class NaiveCoa:
         """
         self.size = size
         self.n_arrays = math.ceil(math.log(self.size, base=2)) + 1
-        self.array = np.empty(2**self.n_arrays, dtype=int)
+        self.array = np.empty(2 ** (self.n_arrays + 1), dtype=int)
+        self.n_array_items = np.zeros(shape=self.n_arrays, dtype=int)
         self.has_item = np.zeros_like(self.array, dtype=bool)
         self.n_items = 0
 
     def search(self, item):
-        last_level = math.ceil(math.log(self.n_items, base=2))
-
-        idx = -1
+        n_items = self.n_items
         start_idx = 0
-        for i in range(last_level + 1):
-            end_idx = 2**i
-            search_array = self.array[start_idx:end_idx]
+        array_size = 1
+        i = 0
+        while start_idx < n_items:
+            search_array = self.array[start_idx:start_idx+self.n_array_items[i]]
             idx = bs.search(search_array, item)
-            if search_array[idx] == item and self.has_item[idx]:
-                idx += start_idx
-                break  # idx is found
-            else:
-                idx = -1  # idx is not yet found
-            start_idx = end_idx
-        return idx
+            if search_array[idx] == item:
+                return start_idx + idx
+            array_size = array_size << 1  # multiply by 2
+            start_idx += array_size
+            i += 1
+        return -1  # no found
 
     def insert(self, item):
         self.n_items += 1
