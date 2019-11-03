@@ -14,13 +14,12 @@ DEFAULT_MEM_SIZE = 100
 
 class NaiveCOA(WriteOptimizedDS):
     def __init__(self, disk_filepath, block_size, n_blocks, n_input_data):
-        super(NaiveCOA, self).__init__(disk_filepath, block_size, n_blocks)
-        """" this is a naive implementation of cache-oblivious arrays, without fractional cascading """
-        self.n_data = n_input_data
-        self.n_arrays = math.ceil(math.log(self.n_data, 2))
-        self.array = np.empty(2 ** (self.n_arrays + 1), dtype=int)  # each should contain at least two arrays.
+        super(NaiveCOA, self).__init__(disk_filepath, block_size, n_blocks, n_input_data)
+        """ this is a naive implementation of cache-oblivious arrays, without fractional cascading """
+        self.n_arrays = math.ceil(math.log(self.n_input_data, 2))
         self.n_array_items = np.zeros(shape=self.n_arrays, dtype=int)
-        self.has_item = np.zeros_like(self.array, dtype=bool)
+        self.arrays = np.empty(2 ** (self.n_arrays + 1), dtype=int)  # each should contain at least two arrays.
+        self.has_items = np.zeros_like(self.arrays, dtype=bool)
         self.n_items = 0
 
     def query(self, item):
