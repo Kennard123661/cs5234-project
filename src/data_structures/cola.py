@@ -1,19 +1,29 @@
 import numpy as np
+import os
+import sys
 import math
 import binary_search as bs
 
+base_dir = os.path.join(os.path.abspath(__file__), '..', '..')
+if __name__ == '__main__':
+    sys.path.append(base_dir)
+from data_structures.base import WriteOptimizedDS
 
-class NaiveCOA:
-    def __init__(self, size):
+DEFAULT_MEM_SIZE = 100
+
+
+class NaiveCOA(WriteOptimizedDS):
+    def __init__(self, disk_filepath, block_size, n_blocks, n_data):
+        super(NaiveCOA, self).__init__(disk_filepath, block_size, n_blocks)
         """" this is a naive implementation of cache-oblivious arrays, without fractional cascading """
-        self.size = size
-        self.n_arrays = math.ceil(math.log(self.size, 2))
+        self.n_data = n_data
+        self.n_arrays = math.ceil(math.log(self.n_data, 2))
         self.array = np.empty(2 ** (self.n_arrays + 1), dtype=int)  # each should contain at least two arrays.
         self.n_array_items = np.zeros(shape=self.n_arrays, dtype=int)
         self.has_item = np.zeros_like(self.array, dtype=bool)
         self.n_items = 0
 
-    def search(self, item):
+    def query(self, item):
         n_items = self.n_items
         start_idx = 0
         array_size = 1
@@ -33,7 +43,7 @@ class NaiveCOA:
 
     def insert(self, item):
         self.n_items += 1
-        if self.n_items >= self.size:
+        if self.n_items >= self.n_data:
             raise BufferError('too much shit')
 
         start_idx = 0
@@ -75,15 +85,14 @@ class NaiveCOA:
             array_size = array_size << 1  # multiply by 2
 
 
-class Cola:
-    def __init__(self, size):
-        """"
-        this is a naive implementation of cache-oblivious arrays
-        """
+class Cola(WriteOptimizedDS):
+    def __init__(self, block_size, n_blocks, size):
+        super(Cola, self).__init__(block_size, n_blocks, size)
+        """" this is a naive implementation of cache-oblivious arrays """
         self.size = size
-        self.n_arrays = math.ceil(math.log(self.size, base=2)) + 1
-        self.array = np.empty(2 ** (self.n_arrays + 1), dtype=int)
-        self.n_array_items = np.zeros(shape=self.n_arrays, dtype=int)
+        self.n_levels = math.ceil(math.log(self.size, base=2)) + 1
+        self.array = np.empty(2 ** (self.n_levels + 1), dtype=int)
+        self.n_array_items = np.zeros(shape=self.n_levels, dtype=int)
         self.has_item = np.zeros_like(self.array, dtype=bool)
         self.n_items = 0
 
@@ -99,7 +108,7 @@ class Cola:
         array_size = 2
         n_insertions = 1
         prev_array = np.array([item])
-        for i in range(self.n_arrays):
+        for i in range(self.n_levels):
             current_arr = self.array[start_idx:start_idx + array_size]
             n_array_item = self.n_array_items[i]
 
@@ -134,19 +143,19 @@ class Cola:
 
 
 def test_naive_coa():
-    ds = NaiveCOA(size=50)
+    ds = NaiveCOA(n_data=50)
     ds.insert(1)
     ds.insert(2)
     ds.insert(3)
     ds.insert(0)
     print(ds.array)
-    search_idx = ds.search(0)
+    search_idx = ds.query(0)
     print(search_idx)
-    search_idx = ds.search(1)
+    search_idx = ds.query(1)
     print(search_idx)
-    search_idx = ds.search(2)
+    search_idx = ds.query(2)
     print(search_idx)
-    search_idx = ds.search(3)
+    search_idx = ds.query(3)
     print(search_idx)
 
 
