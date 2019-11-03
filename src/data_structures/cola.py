@@ -13,10 +13,10 @@ DEFAULT_MEM_SIZE = 100
 
 
 class NaiveCOA(WriteOptimizedDS):
-    def __init__(self, disk_filepath, block_size, n_blocks, n_data):
+    def __init__(self, disk_filepath, block_size, n_blocks, n_input_data):
         super(NaiveCOA, self).__init__(disk_filepath, block_size, n_blocks)
         """" this is a naive implementation of cache-oblivious arrays, without fractional cascading """
-        self.n_data = n_data
+        self.n_data = n_input_data
         self.n_arrays = math.ceil(math.log(self.n_data, 2))
         self.array = np.empty(2 ** (self.n_arrays + 1), dtype=int)  # each should contain at least two arrays.
         self.n_array_items = np.zeros(shape=self.n_arrays, dtype=int)
@@ -44,7 +44,7 @@ class NaiveCOA(WriteOptimizedDS):
     def insert(self, item):
         self.n_items += 1
         if self.n_items >= self.n_data:
-            raise BufferError('too much shit')
+            raise BufferError('too much data, are you sure you initialized me correctly?')
 
         start_idx = 0
         array_size = 2
@@ -143,7 +143,7 @@ class Cola(WriteOptimizedDS):
 
 
 def test_naive_coa():
-    ds = NaiveCOA(n_data=50)
+    ds = NaiveCOA(n_input_data=50)
     ds.insert(1)
     ds.insert(2)
     ds.insert(3)
