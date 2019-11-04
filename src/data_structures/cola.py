@@ -62,9 +62,22 @@ class NaiveCOA(WriteOptimizedDS):
         loaded_data = loaded_data[:end_idx-start_idx]
         return loaded_data
 
-    # def write_to_disk(self, start_idx, end_idx, data_to_write):
-    #     n_blocks = int(math.ceil((end_idx - start_idx)))
-    #     for _ in range(n_blocks):
+    def write_to_disk(self, start_idx, end_idx, data_to_write):
+        """
+        :param start_idx: start idx to write
+        :param end_idx: end idx of write
+        :param data_to_write: the list of data to write
+        """
+        n_blocks = int(math.ceil((end_idx - start_idx) / self.block_size))
+        block_start_idx = start_idx
+        block_end_idx = start_idx + self.block_size
+        write_idx = 0
+        for _ in range(n_blocks):
+            self.disk_data[block_start_idx:block_end_idx] = \
+                data_to_write[write_idx:min(write_idx+self.block_size, end_idx)]
+            write_idx += self.block_size
+            block_start_idx += self.block_size
+            block_end_idx += self.block_size
 
     def query(self, item):
         n_items = self.n_items
@@ -91,6 +104,21 @@ class NaiveCOA(WriteOptimizedDS):
             i += 1
         return -1  # no found
 
+
+    def insert(self, item):
+        self.n_items += 1
+        if self.n_items >= self.n_input_data:
+            raise BufferError('too mcuh data, no initailization')
+
+        start_idx = 0
+        array_size = 1
+        n_insertions = 1
+
+        prev_arr = 
+        for i in range(self.n_arrays):
+            n_array_item = self.n_array_items[i]
+
+
     def insert(self, item):
         self.n_items += 1
         if self.n_items >= self.n_input_data:
@@ -101,7 +129,15 @@ class NaiveCOA(WriteOptimizedDS):
         n_insertions = 1
         prev_array = np.array([item])
         for i in range(self.n_arrays):
-            current_arr = self.arrays[start_idx:start_idx + array_size]
+            n_array_item = self.n_array_items[i]
+            end_idx = start_idx + array_size
+            if start_idx < self.mem_size and end_idx < self.mem_size:
+                current_arr = self.arrays[start_idx:start_idx + array_size]
+            elif start_idx < self.mem_size:
+                current_arr = self.arrays[start_idx:self.mem_size]
+                current_arr = np.array(current_arr.tolist() + self.load_from_disk(self.mem_size, end_idx).tolist())
+            else:
+                current_arr = self.load_from_disk(start_idx, end_idx)
             n_array_item = self.n_array_items[i]
 
             if (n_insertions + n_array_item) > (array_size >> 1):  # if it will fill up both arrays
