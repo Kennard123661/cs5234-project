@@ -11,9 +11,8 @@ storage_dir = os.path.join(base_dir, 'storage')
 
 
 class BasicCola(WriteOptimizedDS):
-    """
-    In this implementation, we assume that there are two arrays per level.
-    """
+    """ In this implementation, we assume that there are two arrays per level. we did not implement fractional
+    cascading for this one. """
     def __init__(self, disk_filepath, block_size, n_blocks, n_input_data, growth_factor=2):
         super(BasicCola, self).__init__(disk_filepath, block_size, n_blocks, n_input_data)
 
@@ -46,6 +45,7 @@ class BasicCola(WriteOptimizedDS):
         self.n_items = 0
 
     def __del__(self):
+        """ save the cache data into the disk and close the disk. """
         self.write_disk(0, self.mem_size, self.cache_array)
         self.disk.close()
         del self.data
@@ -57,13 +57,14 @@ class BasicCola(WriteOptimizedDS):
         insert_arr = [item]
 
         start_idx = 0
-        loaded_arr = copy.deepcopy(self.cache_array)
+        loaded_arr = copy.deepcopy(self.cache_array)  # ensure no changes to the cache array.
         loaded_arr_start_idx = 0
         loaded_arr_end_idx = self.mem_size
         for i in range(self.n_levels):
             level_size = array_size << 1
             end_idx = start_idx + level_size
 
+            # load as much as we need based on blocks.
             while loaded_arr_end_idx < end_idx:
                 loaded_arr += self.read_disk_block(loaded_arr_end_idx)
                 loaded_arr_end_idx += self.block_size
@@ -76,7 +77,7 @@ class BasicCola(WriteOptimizedDS):
             n_level_items = self.n_level_items[i]
             current_arr = loaded_arr[:end_idx-start_idx]
 
-            # perform the merge into the current array
+            # perform the merge into the current array, we merge from the back.
             insert_idx = n_level_items + n_insertions - 1
             i1 = n_level_items - 1
             i2 = n_insertions - 1
@@ -95,18 +96,19 @@ class BasicCola(WriteOptimizedDS):
             else:
                 current_arr[:insert_idx + 1] = insert_arr[:i2 + 1]
                 assert i1 < 0
+            # end of merge
 
             if (n_insertions + n_level_items) > array_size:  # recurse to the next line for insertion
                 insert_arr = current_arr
                 n_insertions += n_level_items
                 self.n_level_items[i] = 0
-            else:  # do not do the recursion
+            else:  # there is enough space to insert all of the data here.
                 self.n_level_items[i] += n_insertions
                 if start_idx >= self.mem_size and end_idx >= self.mem_size:  # both are larger, copy to disk
                     self.write_disk(start_idx, end_idx, current_arr)
                 elif start_idx < self.mem_size and end_idx < self.mem_size:  # both are smaller, copy to cache
                     self.cache_array[start_idx:end_idx] = current_arr
-                elif start_idx < self.mem_size:  # end idx is actually larger than the
+                elif start_idx < self.mem_size:  # copy some to cache and some to the disk.
                     self.cache_array[start_idx:self.mem_size] = current_arr[0:self.mem_size-start_idx]
                     self.write_disk(self.mem_size, end_idx, current_arr[self.mem_size-start_idx:])
                 break
@@ -125,17 +127,18 @@ class BasicCola(WriteOptimizedDS):
         for i in range(n_search_levels):
             level_size = array_size << 1
 
+            # update the loaded array
             end_idx = start_idx + level_size
             while loaded_arr_end_idx < end_idx:
                 loaded_arr += self.read_disk_block(loaded_arr_end_idx)
                 loaded_arr_end_idx += self.block_size
 
-            # update the loaded array
             if start_idx > loaded_arr_start_idx:
                 loaded_arr = loaded_arr[start_idx - loaded_arr_start_idx:]
                 loaded_arr_start_idx = start_idx
+
             n_arr_items = self.n_level_items[i]
-            if n_arr_items > 0:
+            if n_arr_items > 0:  # begin the search here
                 search_arr = loaded_arr[:n_arr_items]
                 idx = bs.search(search_arr, item)
                 if idx < len(search_arr) and search_arr[idx] == item:
