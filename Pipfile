@@ -1,0 +1,19 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+numpy = "*"
+cachetools = "*"
+sortedcontainers = "*"
+h5py = "*"
+binary-search = "*"
+
+[dev-packages]
+pylint = "*"
+pytest = "*"
+autopep8 = "*"
+
+[requires]
+python_version = "3.6"
