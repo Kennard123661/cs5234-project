@@ -17,7 +17,6 @@ class BasicCola(WriteOptimizedDS):
         super(BasicCola, self).__init__(disk_filepath, block_size, n_blocks, n_input_data)
 
         self.growth_factor = int(growth_factor)
-        self.duplicate_factor = 4 * self.growth_factor
         self.n_levels = math.ceil(math.log(self.n_input_data, self.growth_factor))
 
         self.disk_size = self.block_size  # reading and writing will be in blocks.
