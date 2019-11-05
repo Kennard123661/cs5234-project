@@ -86,7 +86,6 @@ class FractionalCola(WriteOptimizedDS):
         loaded_arr_start_idx = 0
         loaded_arr_end_idx = self.mem_size
 
-
         last_insert_level = 0
         last_insert_arr = None
         for i in range(self.n_levels):
@@ -175,6 +174,7 @@ class FractionalCola(WriteOptimizedDS):
             array_size *= self.growth_factor
             last_insert_level += 1
 
+        # insert real lookahead pointers upwards.
         for i in reversed(range(last_insert_level)):
             next_level_n_items = self.n_level_items[i+1]
             if next_level_n_items == 0:
@@ -211,10 +211,6 @@ class FractionalCola(WriteOptimizedDS):
                 self.write_disk(self.disk_r_points, self.mem_size, end_idx, insert_r_points[self.mem_size-start_idx:])
             last_insert_arr = insert_arr
 
-
-
-
-
     def query(self, item):
         array_size = 1
         loaded_arr = copy.deepcopy(self.cache_data)
@@ -246,8 +242,7 @@ class FractionalCola(WriteOptimizedDS):
             array_size *= self.growth_factor
         return -1
 
-    @staticmethod
-    def write_disk(disk, start_idx, end_idx, data):
+    def write_disk(self, disk, start_idx, end_idx, data):
         """ writes the data from start_idx to end_idx to the disk """
         block_start_idx = start_idx
         data_start_idx = 0
@@ -255,7 +250,7 @@ class FractionalCola(WriteOptimizedDS):
             block_end_idx = min(block_start_idx + self.block_size, end_idx)
             n_writes = block_end_idx - block_start_idx
             data_end_idx = data_start_idx + n_writes
-            self.disk_data[block_start_idx:block_end_idx] = data[data_start_idx:data_end_idx]
+            disk[block_start_idx:block_end_idx] = data[data_start_idx:data_end_idx]
             data_start_idx = data_end_idx
             block_start_idx = block_end_idx
 
