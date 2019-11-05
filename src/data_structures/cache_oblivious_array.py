@@ -1,24 +1,28 @@
 import math
 import numpy as np
 import h5py
+import os
 import binary_search as bs
 from data_structures.base import WriteOptimizedDS
 
 N_ARRAYS_PER_LEVEL = 2
+
+base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+storage_dir = os.path.join(base_dir, 'storage')
 
 
 class CacheObliviousArray(WriteOptimizedDS):
     def __init__(self, disk_filepath, block_size, n_blocks, n_input_data):
         super(CacheObliviousArray, self).__init__(disk_filepath, block_size, n_blocks, n_input_data)
 
-        self.n_levels = math.ceil(math.log(self.mem_size, base=2)) + 1
+        self.n_levels = math.ceil(math.log(self.n_input_data, 2)) + 1
         self.total_size = (2 ** self.n_levels * N_ARRAYS_PER_LEVEL) + self.block_size
         self.n_items = 0
-        self.n_subarray_items = np.zeros(self.n_levels, dtype=int)
-        self.cache_array = np.empty(self.mem_size, dtype=int)
+        self.n_subarray_items = np.zeros(shape=self.n_levels, dtype=int)
+        self.cache_array = np.empty(shape=self.mem_size, dtype=int)
 
         disk = h5py.File(self.disk_filepath, 'w')
-        disk.create_dataset('dset', shape=self.total_size)
+        disk.create_dataset('dset', shape=(self.total_size,))
         disk.close()
         self.disk = h5py.File(self.disk_filepath, 'r+')
         self.disk_data = self.disk['dset']
@@ -49,10 +53,11 @@ class CacheObliviousArray(WriteOptimizedDS):
         assert len(save_data) == (end_idx - start_idx)
         insert_idx = 0
         block_start_idx = start_idx
-        while start_idx < end_idx:
-            block_end_idx = min(start_idx + self.block_size, end_idx)
+        while block_start_idx < end_idx:
+            block_end_idx = min(block_start_idx + self.block_size, end_idx)
             n_insertions = block_end_idx - block_start_idx
-            self.save_block_to_disk(start_idx, end_idx, save_data[insert_idx:insert_idx+n_insertions])
+            self.save_block_to_disk(block_start_idx, block_end_idx,
+                                    save_data[insert_idx:insert_idx+n_insertions])
             insert_idx += n_insertions
             block_start_idx = block_end_idx
 
@@ -64,7 +69,7 @@ class CacheObliviousArray(WriteOptimizedDS):
         start_idx = 0
         array_size = 1
         i = 0
-        while i <= (math.ceil(math.log(self.n_items, 2))):
+        while i <= self.n_levels:
             n_subarray_item = self.n_subarray_items[i]
             end_idx = start_idx + n_subarray_item
             if n_subarray_item > 0:
@@ -91,27 +96,26 @@ class CacheObliviousArray(WriteOptimizedDS):
             raise BufferError('too much data, no initialization')
 
         start_idx = 0
-        array_size = 0
+        array_size = 1
         n_insertions = 1
         insert_array = [item]
 
         for i in range(self.n_levels):
-            end_idx = start_idx + array_size
+            end_idx = start_idx + (array_size << 1)
             if start_idx < self.mem_size and end_idx < self.mem_size:
-                current_arr = self.cache_array[start_idx:start_idx + array_size]
+                current_arr = self.cache_array[start_idx:end_idx]
             elif start_idx < self.mem_size:
                 current_arr = self.cache_array[start_idx:self.mem_size]
-                current_arr = np.array(current_arr.tolist() + self.load_data_from_disk(self.mem_size, end_idx).tolist())
+                current_arr = np.array(current_arr.tolist() + self.load_data_from_disk(self.mem_size, end_idx))
             else:
                 current_arr = self.load_data_from_disk(start_idx, end_idx)
             n_subarray_item = self.n_subarray_items[i]
 
-            if (n_insertions + n_subarray_item) > array_size:  # if it will fill up both arrays
+            if n_subarray_item > 0:
                 # do a merge here, inserting the largest item first
                 insert_idx = n_subarray_item + n_insertions - 1
                 i1 = n_subarray_item - 1
                 i2 = n_insertions - 1
-
                 while i1 >= 0 and i2 >= 0:
                     if current_arr[i1] > insert_array[i2]:
                         current_arr[insert_idx] = current_arr[i1]
@@ -127,12 +131,49 @@ class CacheObliviousArray(WriteOptimizedDS):
                 else:
                     current_arr[:insert_idx + 1] = insert_array[:i2 + 1]
                     assert i1 < 0
-                insert_array = current_arr
-                n_insertions += n_subarray_item
-                self.n_subarray_items[i] = 0
+
+                if (n_insertions + n_subarray_item) > array_size:  # recurse to the next line for insertion
+                    insert_array = current_arr
+                    n_insertions += n_subarray_item
+                    self.n_subarray_items[i] = 0
+                else:  # do not do the recursion
+                    self.n_subarray_items[i] += n_insertions
+                    break
             else:  # simple
-                current_arr[n_subarray_item:n_subarray_item+n_insertions] = insert_array[0:n_insertions]
-                self.n_subarray_items[i] += n_insertions
+                current_arr[0:n_insertions] = insert_array
+                self.n_subarray_items[i] = n_insertions
                 break
+
+            # print(current_arr)
+            if start_idx < self.mem_size and end_idx < self.mem_size:  # if both of them are smaller.
+                pass
+            elif start_idx < self.mem_size:
+                data_to_save = current_arr[self.mem_size:]
+                self.save_data_to_disk(self.mem_size, end_idx, data_to_save)
+            else:
+                self.save_data_to_disk(start_idx, end_idx, current_arr)
             array_size = array_size << 1  # multiply by 2
             start_idx += array_size
+
+
+def main():
+    ds = CacheObliviousArray(disk_filepath=os.path.join(storage_dir, 'coa.h5'),
+                             block_size=1, n_blocks=1, n_input_data=50)
+    ds.insert(1)
+    ds.insert(2)
+    ds.insert(3)
+    ds.insert(0)
+    # print('yeet')
+    print(ds.cache_array.tolist())
+    search_idx = ds.query(0)
+    print(search_idx)
+    search_idx = ds.query(1)
+    print(search_idx)
+    search_idx = ds.query(2)
+    print(search_idx)
+    search_idx = ds.query(3)
+    print(search_idx)
+
+
+if __name__ == '__main__':
+    main()
