@@ -66,7 +66,6 @@ class FractionalCola(WriteOptimizedDS):
         self.cache_is_pointers = list(np.zeros(shape=self.mem_size, dtype=bool))
         self.cache_r_points = list(np.zeros(shape=self.mem_size, dtype=np.int))
 
-        self.level_n_pointers = np.zeros(shape=self.n_levels, dtype=np.int)
         self.n_level_items = np.zeros(shape=self.n_levels, dtype=np.int)
         self.n_items = 0
 
@@ -184,9 +183,10 @@ class FractionalCola(WriteOptimizedDS):
                     left_idxs = -np.ones(self.level_n_virtual_pointers[i])
                     right_idxs = -np.ones(self.level_n_virtual_pointers[i])
                     search_start_idx = 0
-                    search_end_idx = len(lookahead_pointers_idxs) - 1
+                    search_end_idx = 0
+                    n_lookahead_idxs = len(lookahead_pointers_idxs)
 
-                    if len(lookahead_pointers_idxs) > 0:
+                    if n_lookahead_idxs > 0:
                         v_idxs = range(self.level_n_virtual_pointers[i])
                         for v, v_idx in enumerate(v_idxs):
                             if v_idx > lookahead_pointers_idxs[-1]:  # no real pointers to its right
@@ -197,9 +197,9 @@ class FractionalCola(WriteOptimizedDS):
                                 left_idxs[v] = search_start_idx
                             elif v_idx < lookahead_pointers_idxs[0]:  # no real pointers to its left
                                 left_idxs[v] = -1
-                                while (search_end_idx - 1) >= 0 and \
-                                        lookahead_pointers_idxs[search_end_idx - 1] >= v_idx:
-                                    search_end_idx -= 1
+                                if search_end_idx >= n_lookahead_idxs:
+                                    right_idxs[v] = search_end_idx
+
                                 right_idxs[v] = search_end_idx
                             else:  # both are within
                                 while (search_end_idx - 1) >= 0 and \
