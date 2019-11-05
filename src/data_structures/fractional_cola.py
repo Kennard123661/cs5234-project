@@ -10,6 +10,10 @@ base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 storage_dir = os.path.join(base_dir, 'storage')
 
 
+REAL_POINTER_STRIDE = 8
+VIRTUAL_POINTER_STRIDE = 4
+
+
 class FractionalCola(WriteOptimizedDS):
     """ In this implementation, we assume that there are two arrays per level. we did not implement fractional
     cascading for this one. """
@@ -17,7 +21,6 @@ class FractionalCola(WriteOptimizedDS):
         super(FractionalCola, self).__init__(disk_filepath, block_size, n_blocks, n_input_data)
 
         self.growth_factor = int(growth_factor)
-        self.duplicate_factor = 4 * self.growth_factor
         self.n_levels = math.ceil(math.log(self.n_input_data, self.growth_factor))
 
         self.disk_size = self.block_size  # reading and writing will be in blocks.
@@ -34,21 +37,57 @@ class FractionalCola(WriteOptimizedDS):
             if not os.path.exists(dirname):
                 os.makedirs(dirname)
 
+        self.n_level_virtual_pointers = np.zeros(shape=self.n_levels, dtype=np.int)
+        for i in range(self.n_levels):
+            level_size = 2**i
+            self.n_level_virtual_pointers[i] = level_size // VIRTUAL_POINTER_STRIDE
+        self.n_virtual_pointers = np.sum(self.n_level_virtual_pointers) + self.block_size
+        self.cache_n_virtual_pointers = 0
+
+        start_idx = 0
+        level_size = 2
+        for i in range(self.n_levels):
+            end_idx = start_idx + level_size
+            if end_idx < self.mem_size:
+                self.cache_n_virtual_pointers += self.n_level_virtual_pointers[i]
+            else:
+                self.cache_n_virtual_pointers += (min(end_idx, self.mem_size) - start_idx) // 4
+            start_idx = end_idx
+            level_size = level_size << 1
+
         disk = h5py.File(self.disk_filepath, 'w')
         disk.create_dataset('dataset', shape=(self.disk_size, ), dtype='i8')
+        disk.create_dataset('is_pointer', shape=(self.disk_size, ), dtype='i8')
+        disk.create_dataset('real_ref', shape=(self.disk_size, ), dtype='i8')
+        disk.create_dataset('virtual_left', shape=(self.n_virtual_pointers, ), dtype='i8')
+        disk.create_dataset('virtual_right', shape=(self.n_virtual_pointers, ), dtype='i8')
         disk.close()
+
         self.disk = h5py.File(self.disk_filepath, 'r+')
-        self.data = self.disk['dataset']
+        self.disk_data = self.disk['dataset']
+        self.disk_v_lefts = self.disk['virtual_left']
+        self.disk_v_rights = self.disk['virtual_right']
+        self.disk_is_pointers = self.disk['is_pointer']
+        self.disk_r_points = self.disk['real_ref']
+
+        self.cache_data = np.zeros(shape=self.mem_size, dtype=np.int).tolist()
+        self.cache_v_lefts = list(-np.ones(shape=self.cache_n_virtual_pointers, dtype=np.int))
+        self.cache_v_rights = list(-np.ones(shape=self.cache_n_virtual_pointers, dtype=np.int))
+        self.cache_is_pointers = list(np.zeros(shape=self.mem_size, dtype=bool))
+        self.cache_r_points = list(np.zeros(shape=self.mem_size, dtype=np.int))
 
         self.n_level_items = np.zeros(shape=self.n_levels, dtype=np.int)
-        self.cache_array = np.zeros(shape=self.mem_size, dtype=np.int).tolist()
         self.n_items = 0
 
     def __del__(self):
         """ save the cache data into the disk and close the disk. """
-        self.write_disk(0, self.mem_size, self.cache_array)
+        self.write_disk(self.disk_data, 0, self.mem_size, self.cache_data)
+        self.write_disk(self.disk_v_lefts, 0, self.cache_n_virtual_pointers, self.cache_v_lefts)
+        self.write_disk(self.disk_v_rights, 0, self.cache_n_virtual_pointers, self.cache_v_rights)
+        self.write_disk(self.disk_is_pointers, 0, self.mem_size, self.cache_is_pointers)
+        self.write_disk(self.disk_r_points, 0, self.mem_size, self.cache_r_points)
         self.disk.close()
-        del self.data
+        del self.disk_data
 
     def insert(self, item):
         self.n_items += 1
@@ -56,10 +95,16 @@ class FractionalCola(WriteOptimizedDS):
         n_insertions = 1
         insert_arr = [item]
 
+        insert_level = 0
         start_idx = 0
-        loaded_arr = copy.deepcopy(self.cache_array)  # ensure no changes to the cache array.
+        loaded_arr = copy.deepcopy(self.cache_data)  # ensure no changes to the cache array.
+        loaded_v_lefts = copy.deepcopy(self.cache_v_lefts)  # ensure no changes to the cache array.
+        loaded_v_rights = copy.deepcopy(self.cache_v_rights)  # ensure no changes to the cache array.
+        loaded_is_pointers = copy.deepcopy(self.cache_is_pointers)  # ensure no changes to the cache array.
+        loaded_r_points = copy.deepcopy(self.cache_r_points)  # ensure no changes to the cache array.
         loaded_arr_start_idx = 0
         loaded_arr_end_idx = self.mem_size
+
         for i in range(self.n_levels):
             level_size = array_size << 1
             end_idx = start_idx + level_size
@@ -107,9 +152,9 @@ class FractionalCola(WriteOptimizedDS):
                 if start_idx >= self.mem_size and end_idx >= self.mem_size:  # both are larger, copy to disk
                     self.write_disk(start_idx, end_idx, current_arr)
                 elif start_idx < self.mem_size and end_idx < self.mem_size:  # both are smaller, copy to cache
-                    self.cache_array[start_idx:end_idx] = current_arr
+                    self.cache_data[start_idx:end_idx] = current_arr
                 elif start_idx < self.mem_size:  # copy some to cache and some to the disk.
-                    self.cache_array[start_idx:self.mem_size] = current_arr[0:self.mem_size-start_idx]
+                    self.cache_data[start_idx:self.mem_size] = current_arr[0:self.mem_size - start_idx]
                     self.write_disk(self.mem_size, end_idx, current_arr[self.mem_size-start_idx:])
                 break
 
@@ -118,7 +163,7 @@ class FractionalCola(WriteOptimizedDS):
 
     def query(self, item):
         array_size = 1
-        loaded_arr = copy.deepcopy(self.cache_array)
+        loaded_arr = copy.deepcopy(self.cache_data)
         loaded_arr_start_idx = 0
         loaded_arr_end_idx = self.mem_size
 
@@ -147,7 +192,8 @@ class FractionalCola(WriteOptimizedDS):
             array_size *= self.growth_factor
         return -1
 
-    def write_disk(self, start_idx, end_idx, data):
+    @staticmethod
+    def write_disk(disk, start_idx, end_idx, data):
         """ writes the data from start_idx to end_idx to the disk """
         block_start_idx = start_idx
         data_start_idx = 0
@@ -155,13 +201,13 @@ class FractionalCola(WriteOptimizedDS):
             block_end_idx = min(block_start_idx + self.block_size, end_idx)
             n_writes = block_end_idx - block_start_idx
             data_end_idx = data_start_idx + n_writes
-            self.data[block_start_idx:block_end_idx] = data[data_start_idx:data_end_idx]
+            self.disk_data[block_start_idx:block_end_idx] = data[data_start_idx:data_end_idx]
             data_start_idx = data_end_idx
             block_start_idx = block_end_idx
 
-    def read_disk_block(self, block_start_idx):
+    def read_disk_block(self, disk, block_start_idx):
         """ reads block and returns it as a list """
-        return list(self.data[block_start_idx:block_start_idx+self.block_size])
+        return list(disk[block_start_idx:block_start_idx + self.block_size])
 
 
 def main():
@@ -172,8 +218,8 @@ def main():
     ds.insert(2)
     ds.insert(3)
     ds.insert(0)
-    print(len(ds.cache_array))
-    print(ds.cache_array)
+    print(len(ds.cache_data))
+    print(ds.cache_data)
     print(ds.n_level_items)
     search_idx = ds.query(0)
     print(search_idx)
