@@ -40,14 +40,19 @@ class FractionalCola(WriteOptimizedDS):
         self.level_n_virtual_pointers = np.zeros(shape=self.n_levels, dtype=int)
         for i in range(self.n_levels):
             array_size = 2**i
-            self.level_n_virtual_pointers[i] = array_size // 4
+            self.level_n_virtual_pointers[i] = array_size // (VIRTUAL_POINTER_STRIDE - 1)
+        self.level_v_start_idx = np.zeros(shape=self.n_levels, dtype=int)
+        self.level_v_start_idx[0] = 0
+        for i in range(1, self.n_levels):
+            self.level_v_start_idx[i] = self.level_n_virtual_pointers[i-1] + self.level_v_start_idx[i-1]
+        self.n_virtual_pointers = np.sum(self.level_n_virtual_pointers)
 
         disk = h5py.File(self.disk_filepath, 'w')
         disk.create_dataset('dataset', shape=(self.disk_size, ), dtype='i8')
         disk.create_dataset('is_pointer', shape=(self.disk_size, ), dtype='i8')
         disk.create_dataset('real_ref', shape=(self.disk_size, ), dtype='i8')
-        disk.create_dataset('virtual_left', shape=(self.disk_size, ), dtype='i8')
-        disk.create_dataset('virtual_right', shape=(self.disk_size, ), dtype='i8')
+        disk.create_dataset('virtual_left', shape=(self.n_virtual_pointers, ), dtype='i8')
+        disk.create_dataset('virtual_right', shape=(self.n_virtual_pointers, ), dtype='i8')
         disk.close()
 
         self.disk = h5py.File(self.disk_filepath, 'r+')
@@ -149,6 +154,10 @@ class FractionalCola(WriteOptimizedDS):
                 self.n_level_items[i] = 0
             else:  # there is enough space to insert all of the data here.
                 self.n_level_items[i] += n_insertions
+                end_idx = start_idx + self.n_level_items[i]
+                current_arr = current_arr[:self.n_level_items[i]]
+                curr_is_pointers = curr_is_pointers[:self.n_level_items[i]]
+                curr_r_points = curr_r_points[:self.n_level_items[i]]
                 if start_idx >= self.mem_size and end_idx >= self.mem_size:  # both are larger, copy to disk
                     self.write_disk(self.disk_data, start_idx, end_idx, current_arr)
                     self.write_disk(self.disk_is_pointers, start_idx, end_idx, curr_is_pointers)
@@ -168,6 +177,45 @@ class FractionalCola(WriteOptimizedDS):
                                     curr_is_pointers[self.mem_size-start_idx:])
                     self.write_disk(self.disk_r_points, self.mem_size, end_idx, curr_r_points[self.mem_size-start_idx:])
                 last_insert_arr = current_arr
+
+                # update virtual points
+                if self.level_n_virtual_pointers[i] > 0:
+                    lookahead_pointers_idxs = np.argwhere(curr_is_pointers)
+                    left_idxs = -np.ones(self.level_n_virtual_pointers[i])
+                    right_idxs = -np.ones(self.level_n_virtual_pointers[i])
+                    search_start_idx = 0
+                    search_end_idx = len(lookahead_pointers_idxs) - 1
+
+                    if len(lookahead_pointers_idxs) > 0:
+                        v_idxs = range(self.level_n_virtual_pointers[i])
+                        for v, v_idx in enumerate(v_idxs):
+                            if v_idx > lookahead_pointers_idxs[-1]:  # no real pointers to its right
+                                right_idxs[v] = -1
+                                while (search_start_idx + 1) <= search_end_idx and \
+                                        lookahead_pointers_idxs[search_start_idx+1] < v_idx:
+                                    search_start_idx += 1
+                                left_idxs[v] = search_start_idx
+                            elif v_idx < lookahead_pointers_idxs[0]:  # no real pointers to its left
+                                left_idxs[v] = -1
+                                while (search_end_idx - 1) >= 0 and \
+                                        lookahead_pointers_idxs[search_end_idx - 1] >= v_idx:
+                                    search_end_idx -= 1
+                                right_idxs[v] = search_end_idx
+                            else:  # both are within
+                                while (search_end_idx - 1) >= 0 and \
+                                        lookahead_pointers_idxs[search_end_idx - 1] >= v_idx:
+                                    search_end_idx -= 1
+                                right_idxs[v] = search_end_idx
+
+                                while (search_start_idx + 1) <= search_end_idx and \
+                                        lookahead_pointers_idxs[search_start_idx+1] < v_idx:
+                                    search_start_idx += 1
+                                left_idxs[v] = search_start_idx
+
+                    v_start = self.level_v_start_idx[i]
+                    v_end = v_start + self.level_n_virtual_pointers[i]
+                    self.write_disk(self.disk_v_lefts, v_start, v_end, left_idxs)
+                    self.write_disk(self.disk_v_rights, v_start, v_end, right_idxs)
                 break
 
             start_idx += level_size
