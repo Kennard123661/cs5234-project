@@ -12,6 +12,7 @@ storage_dir = os.path.join(base_dir, 'storage')
 N_ARRAY_PER_LEVEL = 2
 REAL_POINTER_STRIDE = 8
 VIRTUAL_POINTER_STRIDE = 4
+INPUT_MUL = 2
 
 NULL_REF = -1
 
@@ -22,33 +23,43 @@ class FractionalCola(WriteOptimizedDS):
     def __init__(self, disk_filepath, block_size, n_blocks, n_input_data, growth_factor=2):
         super(FractionalCola, self).__init__(disk_filepath, block_size, n_blocks, n_input_data)
 
+        # we add more levels to contain the real pointers
         self.growth_factor = int(growth_factor)
-        self.n_levels = math.ceil(math.log(self.n_input_data, self.growth_factor))
+        self.n_levels = math.ceil(math.log(self.n_input_data * INPUT_MUL, self.growth_factor))
 
-        self.disk_size = self.block_size  # reading and writing will be in blocks.
+        # compute the size of eah level
+        self.level_sizes = np.zeros(shape=self.n_levels, dtype=int)
         for i in range(self.n_levels):
             array_size = self.growth_factor**i
-            self.disk_size += N_ARRAY_PER_LEVEL * array_size
+            self.level_sizes[i] = N_ARRAY_PER_LEVEL * array_size
+        self.disk_size = np.sum(self.level_sizes) + self.block_size
         assert self.mem_size < self.disk_size
 
-        # todo: transfer this over to the base.py
+        # compute the start idxs of each level using a prefix sum.
+        self.level_start_idxs = np.zeros(shape=self.n_levels, dtype=int)
+        for i in range(1, self.n_levels):
+            self.level_start_idxs[i] = self.level_start_idxs[i-1] + self.level_sizes[i-1]
+
+
+        # compute the number of virtual pointers at each level.
+        self.level_n_virtual_pointers = np.zeros(shape=self.n_levels, dtype=int)
+        for i in range(self.n_levels):
+            array_size = 2**i
+            self.level_n_virtual_pointers[i] = array_size // (VIRTUAL_POINTER_STRIDE - 1)
+        self.n_virtual_pointers = np.sum(self.level_n_virtual_pointers)
+
+        # compute the start idxs of each virtual point in each level
+        self.level_virtual_start = np.zeros(shape=self.n_levels, dtype=int)
+        for i in range(1, self.n_levels):
+            self.level_virtual_start[i] = self.level_n_virtual_pointers[i - 1] + self.level_virtual_start[i - 1]
+
+        # create storage file.
         if os.path.exists(disk_filepath):
             os.remove(disk_filepath)
         else:
             dirname = os.path.dirname(disk_filepath)
             if not os.path.exists(dirname):
                 os.makedirs(dirname)
-
-        self.level_n_virtual_pointers = np.zeros(shape=self.n_levels, dtype=int)
-        for i in range(self.n_levels):
-            array_size = 2**i
-            self.level_n_virtual_pointers[i] = array_size // (VIRTUAL_POINTER_STRIDE - 1)
-        self.level_v_start_idx = np.zeros(shape=self.n_levels, dtype=int)
-        self.level_v_start_idx[0] = 0
-        for i in range(1, self.n_levels):
-            self.level_v_start_idx[i] = self.level_n_virtual_pointers[i-1] + self.level_v_start_idx[i-1]
-        self.n_virtual_pointers = np.sum(self.level_n_virtual_pointers)
-
         disk = h5py.File(self.disk_filepath, 'w')
         disk.create_dataset('dataset', shape=(self.disk_size, ), dtype='i8')
         disk.create_dataset('is_pointer', shape=(self.disk_size, ), dtype='i8')
@@ -57,6 +68,7 @@ class FractionalCola(WriteOptimizedDS):
         disk.create_dataset('virtual_right', shape=(self.n_virtual_pointers, ), dtype='i8')
         disk.close()
 
+        # create reference to disk data, we save the virtual pointers onto disk for ease.
         self.disk = h5py.File(self.disk_filepath, 'r+')
         self.disk_data = self.disk['dataset']
         self.disk_v_lefts = self.disk['virtual_left']
@@ -64,12 +76,13 @@ class FractionalCola(WriteOptimizedDS):
         self.disk_is_pointers = self.disk['is_pointer']
         self.disk_r_points = self.disk['real_ref']
 
+        # create cache data.
         self.cache_data = np.zeros(shape=self.mem_size, dtype=np.int).tolist()
         self.cache_is_pointers = list(np.zeros(shape=self.mem_size, dtype=bool))
         self.cache_r_points = list(np.zeros(shape=self.mem_size, dtype=np.int))
 
-        self.n_level_items = np.zeros(shape=self.n_levels, dtype=np.int)
         self.n_items = 0
+        self.level_n_items = np.zeros(shape=self.n_levels, dtype=np.int)
 
     def __del__(self):
         """ save the cache data into the disk and close the disk. """
@@ -112,7 +125,7 @@ class FractionalCola(WriteOptimizedDS):
                 loaded_r_points = loaded_r_points[start_idx-loaded_arr_start_idx:]
                 loaded_arr_start_idx = start_idx
 
-            level_n_items = self.n_level_items[i]
+            level_n_items = self.level_n_items[i]
             current_arr = loaded_arr[:end_idx-start_idx]
             curr_is_pointers = loaded_is_pointers[:end_idx-start_idx]
             curr_r_points = loaded_r_points[:end_idx-start_idx]
@@ -152,13 +165,13 @@ class FractionalCola(WriteOptimizedDS):
                     if not is_pointer:
                         insert_arr.append(current_arr[j])
                 n_insertions = len(insert_arr)
-                self.n_level_items[i] = 0
+                self.level_n_items[i] = 0
             else:  # there is enough space to insert all of the data here.
-                self.n_level_items[i] += n_insertions
-                end_idx = start_idx + self.n_level_items[i]
-                current_arr = current_arr[:self.n_level_items[i]]
-                curr_is_pointers = curr_is_pointers[:self.n_level_items[i]]
-                curr_r_points = curr_r_points[:self.n_level_items[i]]
+                self.level_n_items[i] += n_insertions
+                end_idx = start_idx + self.level_n_items[i]
+                current_arr = current_arr[:self.level_n_items[i]]
+                curr_is_pointers = curr_is_pointers[:self.level_n_items[i]]
+                curr_r_points = curr_r_points[:self.level_n_items[i]]
 
                 self.save_data(curr_is_pointers, curr_r_points, current_arr, end_idx, start_idx)
                 last_insert_arr = current_arr
@@ -175,11 +188,11 @@ class FractionalCola(WriteOptimizedDS):
 
         # insert real lookahead pointers upwards.
         for i in reversed(range(last_insert_level)):
-            next_level_n_items = self.n_level_items[i+1]
+            next_level_n_items = self.level_n_items[i + 1]
             if next_level_n_items == 0:
-                continue
+                continue  # we skip if there is no items in there
 
-            start_idx = 2**i
+            start_idx = 0 if i == 0 else 2**i
             insert_r_points = range(start=0, stop=next_level_n_items, step=REAL_POINTER_STRIDE)
             insert_is_pointers = np.ones_like(insert_r_points, dtype=bool)
             n_insertions = len(insert_r_points)
@@ -187,7 +200,7 @@ class FractionalCola(WriteOptimizedDS):
             for j in insert_r_points:
                 insert_arr.append(last_insert_arr[j])
 
-            self.n_level_items[i] = n_insertions
+            self.level_n_items[i] = n_insertions
             end_idx = start_idx + n_insertions
             self.save_data(insert_is_pointers, insert_r_points, insert_arr, start_idx, end_idx)
             last_insert_arr = insert_arr
@@ -222,7 +235,7 @@ class FractionalCola(WriteOptimizedDS):
         left_idxs, right_idxs = self.compute_left_right_vp(n_virtual_pointers=self.level_n_virtual_pointers[i],
                                                            real_pointers_idxs=lookahead_pointers_idxs)
         # write the virtual pointers back to the disk
-        v_start_idx = self.level_v_start_idx[i]
+        v_start_idx = self.level_virtual_start[i]
         v_end_idx = v_start_idx + self.level_n_virtual_pointers[i]
         self.write_disk(self.disk_v_lefts, v_start_idx, v_end_idx, left_idxs)
         self.write_disk(self.disk_v_rights, v_start_idx, v_end_idx, right_idxs)
@@ -287,7 +300,7 @@ class FractionalCola(WriteOptimizedDS):
                 loaded_arr = loaded_arr[start_idx - loaded_arr_start_idx:]
                 loaded_arr_start_idx = start_idx
 
-            n_arr_items = self.n_level_items[i]
+            n_arr_items = self.level_n_items[i]
             if n_arr_items > 0:  # begin the search here
                 search_arr = loaded_arr[:n_arr_items]
                 idx = bs.search(search_arr, item)
@@ -324,7 +337,7 @@ def main():
     ds.insert(0)
     print(len(ds.cache_data))
     print(ds.cache_data)
-    print(ds.n_level_items)
+    print(ds.level_n_items)
     search_idx = ds.query(0)
     print(search_idx)
     search_idx = ds.query(1)
