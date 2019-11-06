@@ -13,6 +13,8 @@ N_ARRAY_PER_LEVEL = 2
 REAL_POINTER_STRIDE = 8
 VIRTUAL_POINTER_STRIDE = 4
 
+NULL_REF = -1
+
 
 class FractionalCola(WriteOptimizedDS):
     """ In this implementation, we assume that there are two arrays per level. we did not implement fractional
@@ -157,11 +159,12 @@ class FractionalCola(WriteOptimizedDS):
                 current_arr = current_arr[:self.n_level_items[i]]
                 curr_is_pointers = curr_is_pointers[:self.n_level_items[i]]
                 curr_r_points = curr_r_points[:self.n_level_items[i]]
+
                 if start_idx >= self.mem_size and end_idx >= self.mem_size:  # both are larger, copy to disk
                     self.write_disk(self.disk_data, start_idx, end_idx, current_arr)
                     self.write_disk(self.disk_is_pointers, start_idx, end_idx, curr_is_pointers)
                     self.write_disk(self.disk_r_points, start_idx, end_idx, curr_r_points)
-                elif start_idx < self.mem_size and end_idx < self.mem_size:  # both are smaller, copy to cache
+                elif start_idx < self.mem_size and end_idx < self.mem_size:  # both are within mem_size, copy to cache
                     self.cache_data[start_idx:end_idx] = current_arr
                     self.cache_is_pointers[start_idx:end_idx] = curr_is_pointers
                     self.cache_r_points[start_idx:end_idx] = curr_r_points
@@ -177,13 +180,15 @@ class FractionalCola(WriteOptimizedDS):
                     self.write_disk(self.disk_r_points, self.mem_size, end_idx, curr_r_points[self.mem_size-start_idx:])
                 last_insert_arr = current_arr
 
-                # update virtual points
+                # since we are updating the location, we should update the disk.
                 if self.level_n_virtual_pointers[i] > 0:
                     lookahead_pointers_idxs = np.argwhere(curr_is_pointers)
                     left_idxs = -np.ones(self.level_n_virtual_pointers[i])
                     right_idxs = -np.ones(self.level_n_virtual_pointers[i])
-                    search_start_idx = 0
-                    search_end_idx = 0
+
+                    # we perform a sliding window search from left to right
+                    left_bound = 0
+                    right_bound = 0
                     n_lookahead_idxs = len(lookahead_pointers_idxs)
 
                     if n_lookahead_idxs > 0:
@@ -191,31 +196,32 @@ class FractionalCola(WriteOptimizedDS):
                         for v, v_idx in enumerate(v_idxs):
                             if v_idx > lookahead_pointers_idxs[-1]:  # no real pointers to its right
                                 right_idxs[v] = -1
-                                while (search_start_idx + 1) <= search_end_idx and \
-                                        lookahead_pointers_idxs[search_start_idx+1] < v_idx:
-                                    search_start_idx += 1
-                                left_idxs[v] = search_start_idx
+                                # finding closest left
+                                while (left_bound + 1) < n_lookahead_idxs and \
+                                        lookahead_pointers_idxs[left_bound + 1] < v_idx:
+                                    left_bound += 1
+                                left_idxs[v] = left_bound
                             elif v_idx < lookahead_pointers_idxs[0]:  # no real pointers to its left
                                 left_idxs[v] = -1
-                                if search_end_idx >= n_lookahead_idxs:
-                                    right_idxs[v] = search_end_idx
-
-                                right_idxs[v] = search_end_idx
+                                # finding the closest right that is larger
+                                while (right_bound+1) < n_lookahead_idxs and \
+                                        lookahead_pointers_idxs[right_bound] < v_idx:
+                                    right_bound += 1
+                                right_idxs[v] = right_bound
                             else:  # both are within
-                                while (search_end_idx - 1) >= 0 and \
-                                        lookahead_pointers_idxs[search_end_idx - 1] >= v_idx:
-                                    search_end_idx -= 1
-                                right_idxs[v] = search_end_idx
+                                while (right_bound+1) < n_lookahead_idxs and \
+                                        lookahead_pointers_idxs[right_bound] < v_idx:
+                                    right_bound += 1
+                                while (left_bound + 1) < n_lookahead_idxs and \
+                                        lookahead_pointers_idxs[left_bound + 1] < v_idx:
+                                    left_bound += 1
+                                right_idxs[v] = right_bound
+                                left_idxs[v] = left_bound
 
-                                while (search_start_idx + 1) <= search_end_idx and \
-                                        lookahead_pointers_idxs[search_start_idx+1] < v_idx:
-                                    search_start_idx += 1
-                                left_idxs[v] = search_start_idx
-
-                    v_start = self.level_v_start_idx[i]
-                    v_end = v_start + self.level_n_virtual_pointers[i]
-                    self.write_disk(self.disk_v_lefts, v_start, v_end, left_idxs)
-                    self.write_disk(self.disk_v_rights, v_start, v_end, right_idxs)
+                    v_start_idx = self.level_v_start_idx[i]
+                    v_end_idx = v_start_idx + self.level_n_virtual_pointers[i]
+                    self.write_disk(self.disk_v_lefts, v_start_idx, v_end_idx, left_idxs)
+                    self.write_disk(self.disk_v_rights, v_start_idx, v_end_idx, right_idxs)
                 break
 
             start_idx += level_size
