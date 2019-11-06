@@ -2,6 +2,7 @@ import os
 import math
 import h5py
 import numpy as np
+from bisect import bisect_left, bisect_right
 import copy
 import binary_search as bs
 from data_structures.base import WriteOptimizedDS
@@ -285,44 +286,129 @@ class FractionalCola(WriteOptimizedDS):
         return left_idxs, right_idxs
 
     def query(self, item):
-        array_size = 1
-
-        # initialize the initial data from the cache
-        loaded_arr = copy.deepcopy(self.cache_data)  # ensure no changes to the cache array.
-        loaded_is_pointers = copy.deepcopy(self.cache_is_pointers)
-        loaded_r_points = copy.deepcopy(self.cache_r_points)
-
-        loaded_arr_start_idx = 0
-        loaded_arr_end_idx = self.mem_size
-
+        is_blind_search = True
+        search_start_idx = 0
+        search_end_idx = 0
         for i in range(self.n_levels):
-            start_idx = self.level_start_idxs[i]
-            level_size = self.level_sizes[i]
-            end_idx = start_idx + level_size
+            level_n_item = self.level_n_items[i]
 
-            # load as much as we need based on blocks.
-            while loaded_arr_end_idx < end_idx:
-                loaded_arr += self.read_disk_block(self.disk_data, loaded_arr_end_idx)
-                loaded_is_pointers += self.read_disk_block(self.disk_is_pointers, loaded_arr_end_idx)
-                loaded_r_points += self.read_disk_block(self.disk_r_points, loaded_arr_end_idx)
-                loaded_arr_end_idx += self.block_size
+            has_real_pointer = 2**i > REAL_POINTER_STRIDE
 
-            # update the loaded array by truncating the parts that are from the previous array
-            if start_idx > loaded_arr_start_idx:
-                loaded_arr = loaded_arr[start_idx-loaded_arr_start_idx:]
-                loaded_is_pointers = loaded_is_pointers[start_idx-loaded_arr_start_idx:]
-                loaded_r_points = loaded_r_points[start_idx-loaded_arr_start_idx:]
-                loaded_arr_start_idx = start_idx
+            # check termination condition
+            if level_n_item == 0:
+                if has_real_pointer:
+                    break  # there should be a real pointer here, this means that we have not reached this level yet.
+                else:
+                    continue  #  before any real pointers are available.
 
-            n_items = self.level_n_items[i]
-            if n_items > 0:  # begin the search here
-                search_arr = loaded_arr[:n_items]
-                idx = bs.search(search_arr, item)
-                if idx < len(search_arr) and search_arr[idx] == item:
-                    return start_idx + idx
-            start_idx += level_size
-            array_size *= self.growth_factor
+            if is_blind_search:
+                search_start_idx = self.level_start_idxs[i]
+                search_end_idx = search_start_idx + self.level_n_items[i]
+
+            search_arr = list()
+            search_is_pointers = list()
+            search_r_points = list()
+            if search_start_idx < self.mem_size and search_end_idx < self.mem_size:  # read from cache
+                search_arr = self.cache_data[search_start_idx:search_end_idx]
+                search_is_pointers = self.cache_is_pointers[search_start_idx:search_end_idx]
+                search_r_points = self.cache_r_points[search_start_idx:search_end_idx]
+            elif search_start_idx >= self.mem_size and search_end_idx >= self.mem_size:  # read from disk
+                search_arr = self.read_disk(self.disk_data, search_start_idx, search_end_idx)
+                search_is_pointers = self.read_disk(self.disk_is_pointers, search_start_idx, search_end_idx)
+                search_r_points = self.read_disk(self.disk_r_points, search_start_idx, search_end_idx)
+            elif search_start_idx < self.mem_size:
+                # read some from cache
+                search_arr = self.cache_data[search_start_idx:self.mem_size]
+                search_is_pointers = self.cache_is_pointers[search_start_idx:self.mem_size]
+                search_r_points = self.cache_r_points[search_start_idx:self.mem_size]
+
+                # read the remainder from disk
+                search_arr += self.read_disk(self.disk_data, self.mem_size, search_end_idx)
+                search_is_pointers += self.read_disk(self.disk_is_pointers, self.mem_size, search_end_idx)
+                search_r_points += self.read_disk(self.disk_r_points, self.mem_size, search_end_idx)
+
+            # there is at least one item in this list.
+            l, h = my_binary_search(search_arr, item)
+            is_found = l == h
+            next_start_idx = self.level_start_idxs[i+1]
+            next_n_items = self.level_n_items[i+1]
+            #
+            # if is_found:
+            #     if search_is_pointers[l]:
+            #         return search_start_idx + l
+            #     else:
+            #         is_blind_search = False
+            #         search_start_idx = next_start_idx + search_r_points[l]
+            #         search_end_idx = next_start_idx + search_r_points[l] + 1
+            # else:
+            #     if l == -1:
+            #         search_start_idx = next_start_idx
+            #         # check if h is a pointer
+            #         if search_is_pointers[h]:
+            #             is_blind_search = False
+            #             search_end_idx = next_start_idx + search_r_points[h] + 1
+            #         else:  # find the rightmost pointer
+            #             level_virtual_pointers = self.
+            #             v_left = h // (VIRTUAL_POINTER_STRIDE - 1)
+            #             v_right = v_left + 1
+            #             if v_left
+            #
+            #
+            #     elif h == -1:
+            #         search_end_idx = next_start_idx + level_n_item
+            #
+            #
+            # if idx < len(search_arr):
+            #     if search_arr[idx] == item:  # item found but might be a pointer
+            #         if not search_is_pointers[idx]:
+            #             return search_start_idx + idx  # found it!
+            #         else:  # we traverse down the tree to find the item
+            #             is_blind_search = False
+            #             search_start_idx = next_start_idx + search_r_points[idx]
+            #             search_end_idx = next_start_idx + search_r_points[idx] + 1
+            #     else:  # this item is larger than the pointer
+            #         if search_is_pointers[i]:
+            #             is_blind_search = False
+            #             search_end_idx = next_start_idx + search_r_points[idx] + 1  # this will be the upper bound
+            #
+            #             # find the lower bound
+            #             v_id = search_end_idx // (VIRTUAL_POINTER_STRIDE - 1)
+            #             if v_id == 0:  # there is no such virtual pointer
+            #                 search_start_idx = next_start_idx
+            #             else:
+            #                 v_idx = v_id - 1
+            #                 virtual_start = self.level_virtual_start[i]
+            #                 vp_left = self.disk_v_lefts[virtual_start + v_idx]
+            #                 vp_right = self.disk_v_lefts[virtual_start + v_idx]
+            #
+            #                 if vp_left
+            #
+            #
+            #
+            #
+            #
+            # n_items = self.level_n_items[i]
+            # if n_items > 0:  # begin the search here
+            #     search_arr = search_arr[:n_items]
+            #     idx = bs.search(search_arr, item)
+            #     if idx < len(search_arr) and search_arr[idx] == item:
+            #         search_is_ptrs = search_is_pointers[:n_items]
+            #         is_ptr = search_is_ptrs[idx]
+            #         if is_ptr:
+            #         return next_start_idx + idx
+            # next_start_idx += level_size
+            # array_size *= self.growth_factor
         return -1
+
+    def get_closest_real_pointers(self, level_virtual_pointers):
+
+    def read_disk(self, disk, start_idx, end_idx):
+        temp_idx = start_idx
+        contents = list()
+        while temp_idx < end_idx:
+            contents += self.read_disk_block(disk, temp_idx)
+            temp_idx += end_idx
+        return contents[:end_idx-start_idx]
 
     def write_disk(self, disk, start_idx, end_idx, data):
         """ writes the data from start_idx to end_idx to the disk """
@@ -339,6 +425,37 @@ class FractionalCola(WriteOptimizedDS):
     def read_disk_block(self, disk, block_start_idx):
         """ reads block and returns it as a list """
         return list(disk[block_start_idx:block_start_idx + self.block_size])
+
+
+def my_binary_search(arr, item):
+    """
+    :param arr: sorted array in ascending order
+    :param item: the item to search for
+    :return: the lower bound and upper bound. if they are equal, then the item is found.
+    """
+    # boundary condition, the item is outside of the array
+    last_idx = len(arr) - 1
+    if item < arr[0]:
+        return -1, 0
+    elif item > arr[-1]:
+        return last_idx, -1
+    elif item == arr[0]:
+        return 0, 0
+    elif item == last_idx:
+        return last_idx, last_idx
+
+    l = 0
+    h = len(arr) - 1
+    while (l+1) < h:
+        mid = (l + h) // 2
+        if arr[mid] == item:
+            return mid, mid
+        elif arr[mid] < item:
+            l = mid
+        elif arr[mid] > item:
+            h = mid
+    return l, h
+
 
 
 def main():
