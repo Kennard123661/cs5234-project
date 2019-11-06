@@ -286,28 +286,37 @@ class FractionalCola(WriteOptimizedDS):
 
     def query(self, item):
         array_size = 1
-        loaded_arr = copy.deepcopy(self.cache_data)
+
+        # initialize the initial data from the cache
+        loaded_arr = copy.deepcopy(self.cache_data)  # ensure no changes to the cache array.
+        loaded_is_pointers = copy.deepcopy(self.cache_is_pointers)
+        loaded_r_points = copy.deepcopy(self.cache_r_points)
+
         loaded_arr_start_idx = 0
         loaded_arr_end_idx = self.mem_size
 
-        start_idx = 0
-        n_search_levels = math.ceil(math.log(self.n_items, self.growth_factor)) + 1
-        for i in range(n_search_levels):
-            level_size = array_size << 1
-
-            # update the loaded array
+        for i in range(self.n_levels):
+            start_idx = self.level_start_idxs[i]
+            level_size = self.level_sizes[i]
             end_idx = start_idx + level_size
+
+            # load as much as we need based on blocks.
             while loaded_arr_end_idx < end_idx:
-                loaded_arr += self.read_disk_block(loaded_arr_end_idx)
+                loaded_arr += self.read_disk_block(self.disk_data, loaded_arr_end_idx)
+                loaded_is_pointers += self.read_disk_block(self.disk_is_pointers, loaded_arr_end_idx)
+                loaded_r_points += self.read_disk_block(self.disk_r_points, loaded_arr_end_idx)
                 loaded_arr_end_idx += self.block_size
 
+            # update the loaded array by truncating the parts that are from the previous array
             if start_idx > loaded_arr_start_idx:
-                loaded_arr = loaded_arr[start_idx - loaded_arr_start_idx:]
+                loaded_arr = loaded_arr[start_idx-loaded_arr_start_idx:]
+                loaded_is_pointers = loaded_is_pointers[start_idx-loaded_arr_start_idx:]
+                loaded_r_points = loaded_r_points[start_idx-loaded_arr_start_idx:]
                 loaded_arr_start_idx = start_idx
 
-            n_arr_items = self.level_n_items[i]
-            if n_arr_items > 0:  # begin the search here
-                search_arr = loaded_arr[:n_arr_items]
+            n_items = self.level_n_items[i]
+            if n_items > 0:  # begin the search here
+                search_arr = loaded_arr[:n_items]
                 idx = bs.search(search_arr, item)
                 if idx < len(search_arr) and search_arr[idx] == item:
                     return start_idx + idx
