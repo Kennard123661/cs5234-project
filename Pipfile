@@ -14,6 +14,7 @@ binary-search = "*"
 pylint = "*"
 pytest = "*"
 autopep8 = "*"
+pytest-cov = "*"
 
 [requires]
 python_version = "3.6"

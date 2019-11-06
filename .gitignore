@@ -3,3 +3,5 @@
 storage/*
 .pytest_cache/
 .vscode/
+.coverage
+cov.xml
