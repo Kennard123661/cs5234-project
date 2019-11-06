@@ -40,7 +40,6 @@ class FractionalCola(WriteOptimizedDS):
         for i in range(1, self.n_levels):
             self.level_start_idxs[i] = self.level_start_idxs[i-1] + self.level_sizes[i-1]
 
-
         # compute the number of virtual pointers at each level.
         self.level_n_virtual_pointers = np.zeros(shape=self.n_levels, dtype=int)
         for i in range(self.n_levels):
@@ -98,17 +97,19 @@ class FractionalCola(WriteOptimizedDS):
         n_insertions = 1
         insert_arr = [item]
 
-        start_idx = 0
+        # initialize the initial data from the cache
         loaded_arr = copy.deepcopy(self.cache_data)  # ensure no changes to the cache array.
         loaded_is_pointers = copy.deepcopy(self.cache_is_pointers)
         loaded_r_points = copy.deepcopy(self.cache_r_points)
+
         loaded_arr_start_idx = 0
         loaded_arr_end_idx = self.mem_size
 
-        last_insert_level = 0
-        last_insert_arr = None
+        last_level = 0
+        last_arr = list()
         for i in range(self.n_levels):
-            level_size = array_size * N_ARRAY_PER_LEVEL
+            start_idx = self.level_start_idxs[i]
+            level_size = self.level_sizes[i]
             end_idx = start_idx + level_size
 
             # load as much as we need based on blocks.
@@ -118,19 +119,20 @@ class FractionalCola(WriteOptimizedDS):
                 loaded_r_points += self.read_disk_block(self.disk_r_points, loaded_arr_end_idx)
                 loaded_arr_end_idx += self.block_size
 
-            # update the loaded array
+            # update the loaded array by truncating the parts that are from the previous array
             if start_idx > loaded_arr_start_idx:
                 loaded_arr = loaded_arr[start_idx-loaded_arr_start_idx:]
                 loaded_is_pointers = loaded_is_pointers[start_idx-loaded_arr_start_idx:]
                 loaded_r_points = loaded_r_points[start_idx-loaded_arr_start_idx:]
                 loaded_arr_start_idx = start_idx
 
-            level_n_items = self.level_n_items[i]
+            # only extract relevant portions of the array to work with
             current_arr = loaded_arr[:end_idx-start_idx]
             curr_is_pointers = loaded_is_pointers[:end_idx-start_idx]
             curr_r_points = loaded_r_points[:end_idx-start_idx]
 
             # perform the merge into the current array, we merge from the back.
+            level_n_items = self.level_n_items[i]
             insert_idx = level_n_items + n_insertions - 1
             i1 = level_n_items - 1
             i2 = n_insertions - 1
@@ -141,12 +143,14 @@ class FractionalCola(WriteOptimizedDS):
                     curr_r_points[insert_idx] = curr_r_points[i1]
                     i1 -= 1
                 else:
+                    # note that items in the inserted array must not be a pointer.
                     current_arr[insert_idx] = insert_arr[i2]
                     curr_is_pointers[insert_idx] = False
                     curr_r_points[insert_idx] = -1
                     i2 -= 1
                 insert_idx -= 1
 
+            # some of the arrays might not be fully merged.
             if i1 >= 0:
                 current_arr[:insert_idx + 1] = current_arr[:i1+1]
                 curr_is_pointers[:insert_idx+1] = curr_is_pointers[:i1+1]
@@ -160,21 +164,23 @@ class FractionalCola(WriteOptimizedDS):
             # end of merge
 
             if (n_insertions + level_n_items) > array_size:  # recurse to the next line for insertion
+                # extract non-pointers and put them into the insert array
                 insert_arr = list()
                 for j, is_pointer in enumerate(curr_is_pointers):
                     if not is_pointer:
                         insert_arr.append(current_arr[j])
                 n_insertions = len(insert_arr)
-                self.level_n_items[i] = 0
+                self.level_n_items[i] = 0  # reset this to 0.
             else:  # there is enough space to insert all of the data here.
+                # perform save only on relevant portions of the merge
                 self.level_n_items[i] += n_insertions
-                end_idx = start_idx + self.level_n_items[i]
                 current_arr = current_arr[:self.level_n_items[i]]
                 curr_is_pointers = curr_is_pointers[:self.level_n_items[i]]
                 curr_r_points = curr_r_points[:self.level_n_items[i]]
 
+                end_idx = start_idx + self.level_n_items[i]
                 self.save_data(curr_is_pointers, curr_r_points, current_arr, end_idx, start_idx)
-                last_insert_arr = current_arr
+                last_arr = copy.deepcopy(current_arr)
 
                 # perform an update over the virtual pointers.
                 if self.level_n_virtual_pointers[i] > 0:
@@ -182,28 +188,27 @@ class FractionalCola(WriteOptimizedDS):
                     self.update_virtual_pointers(i, lookahead_pointers_idxs)
                 break
 
-            start_idx += level_size
             array_size *= self.growth_factor
-            last_insert_level += 1
+            last_level += 1
 
-        # insert real lookahead pointers upwards.
-        for i in reversed(range(last_insert_level)):
+        # insert real lookahead pointers upwards, we do this for levels before the last level, from bottom up.
+        for i in reversed(range(last_level)):
             next_level_n_items = self.level_n_items[i + 1]
-            if next_level_n_items == 0:
-                continue  # we skip if there is no items in there
+            if next_level_n_items < REAL_POINTER_STRIDE:
+                break  # we skip if there are no real pointers to insert.
 
-            start_idx = 0 if i == 0 else 2**i
-            insert_r_points = range(start=0, stop=next_level_n_items, step=REAL_POINTER_STRIDE)
+            start_idx = self.level_start_idxs[i]
+            insert_r_points = range(start=7, stop=next_level_n_items, step=REAL_POINTER_STRIDE)
             insert_is_pointers = np.ones_like(insert_r_points, dtype=bool)
             n_insertions = len(insert_r_points)
             insert_arr = list()
             for j in insert_r_points:
-                insert_arr.append(last_insert_arr[j])
+                insert_arr.append(last_arr[j])
 
             self.level_n_items[i] = n_insertions
             end_idx = start_idx + n_insertions
             self.save_data(insert_is_pointers, insert_r_points, insert_arr, start_idx, end_idx)
-            last_insert_arr = insert_arr
+            last_arr = copy.deepcopy(insert_arr)
 
             # perform an update over the virtual pointers.
             if self.level_n_virtual_pointers[i] > 0:
