@@ -329,9 +329,42 @@ class FractionalCola(WriteOptimizedDS):
 
             # there is at least one item in this list.
             l, h = my_binary_search(search_arr, item)
-            is_found = l == h
+            is_found = l == h and l != -1
             next_start_idx = self.level_start_idxs[i+1]
             next_n_items = self.level_n_items[i+1]
+            v_start = self.level_virtual_start[i]
+            v_next_start = self.level_virtual_start[i+1]
+            n_vp = self.level_n_virtual_pointers[i]
+
+            if is_found:
+                if search_is_pointers[l]:
+                    return search_start_idx + l
+                else:
+                    is_blind_search = False
+                    search_start_idx = next_start_idx + search_r_points[l]
+                    search_end_idx = next_start_idx + search_r_points[l] + 1
+            else:  # not found, search other locations
+                if l == -1:
+                    search_start_idx = next_start_idx
+                else:
+                    # find the closest lookahead pointer that is smaller than l
+                    v_left, v_right = self.get_closest_virtual(l)
+                    if v_left < 0 and (v_right-1) > n_vp:
+                        search_start_idx = next_start_idx
+                    elif v_left < 0:
+                        proposal = None
+                        proposed_left = self.disk_v_lefts[v_start + v_right]
+                        if proposed_left == -1
+
+                        proposed_right = self.disk_v_rights[v_start + v_right]
+                        if proposed_right < l:
+
+                if h == -1:
+                    search_end_idx = next_start_idx + next_n_items
+                else:
+                    # find the closest lookahead pointer that is smaller than l
+                    v_left, v_right = self.get_closest_virtual(l)
+
             #
             # if is_found:
             #     if search_is_pointers[l]:
@@ -400,7 +433,10 @@ class FractionalCola(WriteOptimizedDS):
             # array_size *= self.growth_factor
         return -1
 
-    def get_closest_real_pointers(self, level_virtual_pointers):
+    def get_closest_virtual(self, idx):
+        closest_left = idx // (VIRTUAL_POINTER_STRIDE - 1)-1
+        closest_right = closest_left + 1
+        return closest_left, closest_right
 
     def read_disk(self, disk, start_idx, end_idx):
         temp_idx = start_idx
