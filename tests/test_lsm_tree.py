@@ -42,6 +42,7 @@ def test_lsm_tree_mem_inserts(test_folder):
         tree.insert(i), i
     for i in range(n):
         assert tree.query(i), i
+    assert not tree.query(n)
 
 def test_lsm_tree_disk_inserts(test_folder):
     n = 3000
@@ -50,6 +51,7 @@ def test_lsm_tree_disk_inserts(test_folder):
         tree.insert(i), i
     for i in range(n):
         assert tree.query(i), i
+    assert not tree.query(n)
 
 def test_lsm_tree_large_inserts(test_folder):
     n = 30000
@@ -58,6 +60,7 @@ def test_lsm_tree_large_inserts(test_folder):
         tree.insert(i), i
     for i in range(n):
         assert tree.query(i), i
+    assert not tree.query(n)
 
 def test_lsm_tree_random_inserts(test_folder):
     n = 3000
@@ -68,3 +71,11 @@ def test_lsm_tree_random_inserts(test_folder):
         tree.insert(i), i
     for i in arr:
         assert tree.query(i), i
+    assert not tree.query(n)
+
+def test_lsm_tree_very_large_inserts(test_folder):
+    n = 1000000
+    tree = LSMTree(test_folder)
+    for i in range(n):
+        tree.insert(i), i
+    assert not tree.query(n)
