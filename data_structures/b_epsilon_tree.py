@@ -29,25 +29,27 @@ class BEpsilonTree(WriteOptimizedDS):
         def __contains__(self, item):
             return item in self.buffer
 
-        def add(self, item):
-            if item not in self.buffer:
-                self.buffer.add(item)
+        def add(self, items):
+            if not isinstance(items, list):
+                items = [items]
+            self.buffer.update(items)
+            self.buffer = SortedList(SortedSet(self.buffer))
 
         def get_child(self, item):
-            return self.children[self.keys.bisect_left(item)]
+            return self.children[self.keys.bisect_right(item)]
 
         def replace_child(self, child_ptr, left_child_ptr, right_child_ptr, median):
             self.keys.add(median)
             idx = self.children.index(child_ptr)
-            self.children.index[idx:idx+1] = left_child_ptr, right_child_ptr
+            self.children[idx:idx+1] = left_child_ptr, right_child_ptr
 
         def pop_most_pending(self):
             pending_sizes = []
             pending_sizes.append(self.buffer.bisect_left(self.keys[0]))
-            for i, j in zip(self.keys[1:], self.keys):
+            for i, j in zip(self.keys, self.keys[1:]):
                 size = self.buffer.bisect_right(j) - self.buffer.bisect_left(i)
                 pending_sizes.append(size)
-            pending_sizes.append(self.buffer.bisect_right(self.keys[-1]))
+            pending_sizes.append(len(self.buffer) - self.buffer.bisect_right(self.keys[-1]))
             idx = np.argmax(pending_sizes)
             child_ptr = self.children[idx]
             if child_ptr == self.children[0]:
@@ -67,14 +69,23 @@ class BEpsilonTree(WriteOptimizedDS):
             return (child_ptr, items)
 
         def split(self):
-            assert(self.keys > 1)
+            assert(len(self.keys) > 1)
             median = self.keys[len(self.keys)//2]
             idx = len(self.keys)//2
-            left_node = BEpsilonTree.BranchNode(keys=self.keys[:idx], children=self.children[:idx+1])
-            right_node = BEpsilonTree.BranchNode(keys=self.keys[idx+1:], children=self.children[idx+1:])
+            left_node = BEpsilonTree.BranchNode(keys=self.keys[:idx], children=self.children[:idx+1], buffer=self.buffer[:self.buffer.bisect_left(median)])
+            right_node = BEpsilonTree.BranchNode(keys=self.keys[idx+1:], children=self.children[idx+1:], buffer=self.buffer[self.buffer.bisect_left(median):])
             return left_node, right_node, median
 
     class RootNode(BranchNode):
+        def pop_most_pending(self):
+            if len(self.keys) == 0:
+                items = list(self.buffer)
+                self.buffer.clear()
+                child_ptr = self.children[0]
+                return (child_ptr, items)
+            else:
+                return super().pop_most_pending()
+        
         def reset(self, left_ptr, right_ptr, median):
             self.buffer.clear()
             self.keys.clear()
@@ -84,22 +95,24 @@ class BEpsilonTree(WriteOptimizedDS):
 
     class LeafNode(Node):
         def __init__(self, records=[]):
-            self.records = SortedList()
+            self.records = SortedList(records)
 
         def __contains__(self, item):
             return item in self.records
 
-        def add(self, item):
-            if item not in self.records:
-                self.records.add(item)
+        def add(self, items):
+            if not isinstance(items, list):
+                items = [items]
+            self.records.update(items)
+            self.records = SortedList(SortedSet(self.records))
 
         def split(self):
             assert(len(self.records) > 1)
-            median = self.records[len(self.records)//2]
-            idx = len(self.records)//2
+            median = self.records[len(self.records)//2 - 1]
+            idx = len(self.records)//2 - 1
             left_node = BEpsilonTree.LeafNode(self.records[:idx])
             right_node = BEpsilonTree.LeafNode(self.records[idx:])
-            return median, left_node, right_node
+            return left_node, right_node, median
 
     class Blocks(LRUCache):
         def __init__(self, maxsize, folder):
@@ -134,30 +147,29 @@ class BEpsilonTree(WriteOptimizedDS):
                     pickle.dump(value, f)
 
     def __init__(self, disk_filepath, b=4, block_size=4096, n_blocks=64, n_input_data=1024):
-        super().__init__(self, disk_filepath, block_size, n_blocks, n_input_data)
+        super().__init__(disk_filepath, block_size, n_blocks, n_input_data)
         self.blocks = BEpsilonTree.Blocks(n_blocks, disk_filepath)
         self.b = b
 
-        if self.block_size < 2:
+        if self.blocks.size < 2:
             root_ptr = self.blocks.create_block()
             leaf_ptr = self.blocks.create_block()
-            self.blocks[root_ptr] = BEpsilonTree.RootNode(b, children=[leaf_ptr])
+            self.blocks[root_ptr] = BEpsilonTree.RootNode(children=[leaf_ptr])
             self.blocks[leaf_ptr] = BEpsilonTree.LeafNode()
 
-    def insert(self, item, node_ptr=0):
-        self.blocks[node_ptr].add(item)
+    def insert(self, items, node_ptr=0):
+        self.blocks[node_ptr].add(items)
         if self.is_items_full(node_ptr):
             if isinstance(self.blocks[node_ptr], BEpsilonTree.BranchNode):
                 # Flush node
                 child_ptr, items = self.blocks[node_ptr].pop_most_pending()
-                for item in items:
-                    res = self.insert(item, child_ptr)
-                    if res is not None:
-                        left_node, right_node, median = res
-                        new_node_ptr = self.blocks.create_block()
-                        self.blocks[child_ptr] = left_node
-                        self.blocks[new_node_ptr] = right_node
-                        self.blocks[node_ptr].replace_child(child_ptr, child_ptr, new_node_ptr, median)
+                res = self.insert(items, child_ptr)
+                if res is not None:
+                    left_node, right_node, median = res
+                    new_node_ptr = self.blocks.create_block()
+                    self.blocks[child_ptr] = left_node
+                    self.blocks[new_node_ptr] = right_node
+                    self.blocks[node_ptr].replace_child(child_ptr, child_ptr, new_node_ptr, median)
                 # If node branch is full, split
                 if self.is_branches_full(node_ptr):
                     left_node, right_node, median = self.blocks[node_ptr].split()
@@ -189,3 +201,6 @@ class BEpsilonTree(WriteOptimizedDS):
 
     def is_branches_full(self, node_ptr):
         return len(self.blocks[node_ptr].children) >= self.b
+
+    def flush(self):
+        self.blocks.flush()
