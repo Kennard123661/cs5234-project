@@ -1,1 +1,7 @@
-.idea/*
+.idea/
+*.pyc
+storage/*
+.pytest_cache/
+.vscode/
+.coverage
+cov.xml
