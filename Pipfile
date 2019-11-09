@@ -9,6 +9,7 @@ cachetools = "*"
 sortedcontainers = "*"
 h5py = "*"
 binary-search = "*"
+pybloom-live = "*"
 
 [dev-packages]
 pylint = "*"

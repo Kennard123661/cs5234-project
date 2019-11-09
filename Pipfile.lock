@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "37562b3d085da51687348dbc2abdec27953c9199fc9edb18b6504c82ec8dd7f4"
+            "sha256": "be4e531a20469dbfdb9fa31e61caf18b98a69d5033ed905cd1ce64b7aadb7fb7"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -22,6 +22,12 @@
             ],
             "index": "pypi",
             "version": "==0.3.0"
+        },
+        "bitarray": {
+            "hashes": [
+                "sha256:9f578314c7808eb1416620dc7d7977d4787a65a4f61b4c9685343a860712615b"
+            ],
+            "version": "==1.1.0"
         },
         "cachetools": {
             "hashes": [
@@ -91,6 +97,13 @@
             "index": "pypi",
             "version": "==1.17.3"
         },
+        "pybloom-live": {
+            "hashes": [
+                "sha256:837550da7c82adb14b901c56c3e131ad269250cd19850a53671e878bd0626c68"
+            ],
+            "index": "pypi",
+            "version": "==3.0.0"
+        },
         "six": {
             "hashes": [
                 "sha256:1f1b7d42e254082a9db6279deae68afb421ceba6158efa6131de7b3003ee93fd",
@@ -110,10 +123,10 @@
     "develop": {
         "astroid": {
             "hashes": [
-                "sha256:09a3fba616519311f1af8a461f804b68f0370e100c9264a035aa7846d7852e33",
-                "sha256:5a79c9b4bd6c4be777424593f957c996e20beb5f74e0bc332f47713c6f675efe"
+                "sha256:71ea07f44df9568a75d0f354c49143a4575d90645e9fead6dfb52c26a85ed13a",
+                "sha256:840947ebfa8b58f318d42301cf8c0a20fd794a33b61cc4638e28e9e61ba32f42"
             ],
-            "version": "==2.3.2"
+            "version": "==2.3.3"
         },
         "atomicwrites": {
             "hashes": [

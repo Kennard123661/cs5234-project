@@ -1,5 +1,6 @@
 from data_structures.base import WriteOptimizedDS
 from sortedcontainers import SortedList
+from pybloom_live import ScalableBloomFilter
 import pickle
 import os
 from uuid import uuid4
@@ -35,15 +36,21 @@ class LSMTree(WriteOptimizedDS):
                 return None
             return self.uuids[idx - 1]
 
-    def __init__(self, disk_filepath, growth_factor=10, block_size=4096, n_blocks=64, n_input_data=1000):
+    def __init__(self, disk_filepath, growth_factor=10, enable_bloomfilter=True, bloomfilter_params={'initial_capacity': 3000, 'error_rate': 0.01}, block_size=4096, n_blocks=64, n_input_data=1000):
         super().__init__(disk_filepath, block_size, n_blocks, n_input_data)
         self.growth_factor = growth_factor
         self.memtable = SortedList()
+        self.enable_bloomfilter = enable_bloomfilter
+        self.bloomfilter_params = bloomfilter_params
+        if self.enable_bloomfilter:
+            self.bloomfilters = {}
+            self.bloomfilters[0] = ScalableBloomFilter(**self.bloomfilter_params)
 
     def insert(self, item):
         if item in self.memtable:
             return
         self.memtable.add(item)
+        self.bloomfilters[0].add(item)
         if len(pickle.dumps(self.memtable)) > self.block_size:
             memtable_copy = copy.deepcopy(self.memtable)
             self.dump_to_disk(memtable_copy)
@@ -62,7 +69,6 @@ class LSMTree(WriteOptimizedDS):
         self.set_level_metadata(0, metadata)
         self.set_level_data(0, uuid, memtable)
         self.compact()
-        pass
 
     def get_level_folder(self, level):
         folder = os.path.join(self.disk_filepath, str(level))
@@ -123,6 +129,9 @@ class LSMTree(WriteOptimizedDS):
             curr_level_folder = self.get_level_folder(level)
             curr_level_meta.clear()
             self.set_level_metadata(level, curr_level_meta)
+            if self.enable_bloomfilter:
+                self.bloomfilters[level + 1] = self.bloomfilters[level]
+                self.bloomfilters[level] = ScalableBloomFilter(**self.bloomfilter_params)
             return
         # Current level is full and next level is not empty
         next_level_meta = self.get_level_metadata(level + 1)
@@ -160,12 +169,18 @@ class LSMTree(WriteOptimizedDS):
         self.set_level_metadata(level + 1, next_level_meta)
         # Clear this level
         self.clear_level(level)
+        # Merge bloom filters
+        if self.enable_bloomfilter:
+            self.bloomfilters[level + 1] = self.bloomfilters[level + 1].union(self.bloomfilters[level])
+            self.bloomfilters[level] = ScalableBloomFilter(**self.bloomfilter_params)
         # Compact the next level
         self.compact(level + 1)
 
     def query_from_disk(self, item):
         total_levels = len(os.listdir(self.disk_filepath))
         for level in range(total_levels):
+            if self.enable_bloomfilter and item not in self.bloomfilters[level]:
+                continue
             metadata = self.get_level_metadata(level)
             uuid = metadata.get_uuid(item)
             if uuid is None:
