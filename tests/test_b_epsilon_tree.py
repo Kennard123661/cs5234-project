@@ -1,6 +1,7 @@
 import pytest
 import shutil
 import os
+import numpy as np
 from data_structures import BEpsilonTree
 
 
@@ -165,5 +166,16 @@ def test_b_epsilon_tree_large_inserts(test_folder):
     for i in range(n):
         tree.insert(i)
     for i in range(n):
+        assert tree.query(i)
+    assert not tree.query(n)
+
+def test_b_epsilon_tree_random_inserts(test_folder):
+    n = 5000
+    arr = np.arange(n)
+    np.random.shuffle(arr)
+    tree = BEpsilonTree(test_folder)
+    for i in arr:
+        tree.insert(i)
+    for i in arr:
         assert tree.query(i)
     assert not tree.query(n)
