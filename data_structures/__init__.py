@@ -1,1 +1,2 @@
 from data_structures.b_epsilon_tree import BEpsilonTree
+from data_structures.lsm_tree import LSMTree
