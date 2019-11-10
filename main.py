@@ -14,7 +14,7 @@ def default_n_input_data():
 @ex.named_config
 def default_wods_params():
     block_size = 4096
-    n_blocks = 1024
+    n_blocks = 64
 
 
 @ex.named_config
@@ -82,17 +82,18 @@ def get_wods(wods_type, block_size, n_blocks, n_input_data):
 
 @ex.capture
 def get_commands(n_input_data, inserts_size, random):
-    n_input_data = n_input_data * 2
-    inserts = [('insert', i) for i in range(n_input_data)]
-    queries = [('query', i) for i in range(n_input_data)]
+    rng = np.random.RandomState(42)
+    inserts = [('insert', i) for i in rng.choice(n_input_data, int(n_input_data*inserts_size))]
+    queries = [('query', i) for i in rng.choice(n_input_data, int(n_input_data*(1-inserts_size)))]
     if random:
-        inserts = np.random.choice(inserts, n_input_data*inserts_size)
-        queries = np.random.choice(queries, n_input_data*(1-inserts_size))
+        inserts = [('insert', i) for i in rng.choice(n_input_data, int(n_input_data*inserts_size))]
+        queries = [('query', i) for i in rng.choice(n_input_data, int(n_input_data*(1-inserts_size)))]
         commands = inserts + queries
-        np.random.shuffle(commands)
+        rng.shuffle(commands)
     else:
-        commands = inserts[:int(n_input_data*inserts_size)] + \
-            queries[:int(n_input_data*(1 - inserts_size))]
+        inserts = [('insert', i) for i in range(int(n_input_data*inserts_size))]
+        queries = [('query', i) for i in range(int(n_input_data*(1 - inserts_size)))]
+        commands = inserts + queries
     return commands
 
 
@@ -126,6 +127,7 @@ if __name__ == '__main__':
         'wods_lsm_bf_tree',
         'wods_basic_cola',
     ]
+    # ex.run(named_configs=['default_n_input_data', 'default_wods_params', 'data_random_0_5', 'wods_b_epsilon_tree'])
     for data in data_configs:
         for wods in wods_configs:
             ex.run(named_configs=['default_n_input_data', 'default_wods_params', data, wods])

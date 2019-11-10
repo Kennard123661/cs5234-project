@@ -42,6 +42,8 @@ class LSMTree(WriteOptimizedDS):
         self.memtable = SortedList()
         self.enable_bloomfilter = enable_bloomfilter
         self.bloomfilter_params = bloomfilter_params
+        if not os.path.exists(self.disk_filepath):
+            os.makedirs(disk_filepath)
         if self.enable_bloomfilter:
             self.bloomfilters = {}
             self.bloomfilters[0] = ScalableBloomFilter(**self.bloomfilter_params)
