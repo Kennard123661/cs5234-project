@@ -85,7 +85,7 @@ class FractCola(WriteOptimizedDS):
             # perform the merge here, we merge to the front of the merge array.
             merged_i, insert_i, level_i = 0, 0, 0
             leftmost_lookahead_idx = INVALID_IDX
-            while insert_i < level_n_items or level_i < n_inserts:
+            while level_i < level_n_items and insert_i < n_inserts:
                 if level_data[level_i] <= insert_data[insert_i]:  # insert level items
                     merged_data[merged_i] = level_data[level_i]
                     merged_is_lookaheads[merged_i] = level_is_lookaheads[level_i]
@@ -100,7 +100,23 @@ class FractCola(WriteOptimizedDS):
                     merged_is_lookaheads[merged_i] = False
                     merged_references[merged_i] = leftmost_lookahead_idx
                     insert_i += 1
-                merged_i = 0
+                merged_i += 1
+
+            if insert_i < n_inserts:
+                assert level_i == level_n_items
+                merged_data[merged_i:] = insert_data[insert_i:]
+                merged_is_lookaheads[merged_i:] = np.zeros_like(insert_data[insert_i:], dtype=bool)
+                merged_references[merged_i:] = np.ones_like(insert_data[insert_i:], dtype=int) * leftmost_lookahead_idx
+            elif level_i < level_n_items:
+                assert insert_i < n_inserts
+                merged_data[merged_i:] = level_data[level_i:]
+                merged_is_lookaheads[merged_i:] = level_is_lookaheads[level_i:]
+                for j, is_lookahead in enumerate(level_is_lookaheads[level_i:]):
+                    if is_lookahead:
+                        merged_references[merged_i+j] = level_references[level_i+j]
+                        leftmost_lookahead_idx = level_i + j
+                    else:
+                        merged_data[merged_i+j] = leftmost_lookahead_idx
 
             if level_n_items + n_inserts >= level_size:  # it will be full, grab all non-pointers
                 self.level_n_items[i] = 0
@@ -122,6 +138,7 @@ class FractCola(WriteOptimizedDS):
                 # update for the upward insertion of lookahead pointers
                 last_insert_level = i
                 next_level_data = merged_data
+                break
 
         # perform the upward insertion of lookahead pointers, note that all upper levels were merged
         # and should not have any items, so we can simply override them.
@@ -257,6 +274,7 @@ def main():
     save_filename = 'cola.hdf5'
     ds = FractCola(disk_filepath=os.path.join(storage_dir, save_filename), block_size=2,
                    n_blocks=2, n_input_data=5000)
+    ds.insert(1)
 
 
 if __name__ == '__main__':
