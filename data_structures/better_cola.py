@@ -108,7 +108,7 @@ class FractCola(WriteOptimizedDS):
                 merged_is_lookaheads[merged_i:] = np.zeros_like(insert_data[insert_i:], dtype=bool)
                 merged_references[merged_i:] = np.ones_like(insert_data[insert_i:], dtype=int) * leftmost_lookahead_idx
             elif level_i < level_n_items:
-                assert insert_i < n_inserts
+                assert insert_i == n_inserts
                 merged_data[merged_i:] = level_data[level_i:]
                 merged_is_lookaheads[merged_i:] = level_is_lookaheads[level_i:]
                 for j, is_lookahead in enumerate(level_is_lookaheads[level_i:]):
@@ -118,9 +118,9 @@ class FractCola(WriteOptimizedDS):
                     else:
                         merged_data[merged_i+j] = leftmost_lookahead_idx
 
-            if level_n_items + n_inserts >= level_size:  # it will be full, grab all non-pointers
+            if level_n_items + n_inserts > level_size:  # it will be full, grab all non-pointers
                 self.level_n_items[i] = 0
-                data_idxs = np.argwhere(np.bitwise_not(merged_is_lookaheads))
+                data_idxs = np.argwhere(np.bitwise_not(merged_is_lookaheads)).reshape(-1)
                 insert_data = merged_data[data_idxs]
                 n_inserts = len(insert_data)
             else:
@@ -144,6 +144,9 @@ class FractCola(WriteOptimizedDS):
         # and should not have any items, so we can simply override them.
         for i in reversed(range(last_insert_level)):
             level_n_lookahead = self.level_n_lookaheads[i]
+            if level_n_lookahead == 0:
+                break  # no more lookaheads
+
             next_level_size = self.level_sizes[i+1]
             next_level_n_items = self.level_n_items[i+1]
             assert len(next_level_data) == next_level_size
@@ -275,6 +278,18 @@ def main():
     ds = FractCola(disk_filepath=os.path.join(storage_dir, save_filename), block_size=2,
                    n_blocks=2, n_input_data=5000)
     ds.insert(1)
+    ds.insert(2)
+    ds.insert(3)
+    ds.insert(0)
+    print(ds.level_n_items)
+    search_idx = ds.query(0)
+    print(search_idx)
+    search_idx = ds.query(1)
+    print(search_idx)
+    search_idx = ds.query(2)
+    print(search_idx)
+    search_idx = ds.query(3)
+    print(search_idx)
 
 
 if __name__ == '__main__':
