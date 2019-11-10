@@ -141,10 +141,10 @@ class BasicCola(WriteOptimizedDS):
                 search_arr = loaded_arr[:n_arr_items]
                 idx = bs.search(search_arr, item)
                 if idx < len(search_arr) and search_arr[idx] == item:
-                    return start_idx + idx
+                    return True
             start_idx += level_size
             array_size *= self.growth_factor
-        return -1
+        return False
 
     def write_disk(self, start_idx, end_idx, data):
         """ writes the data from start_idx to end_idx to the disk """
