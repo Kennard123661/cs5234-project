@@ -8,7 +8,7 @@ import h5py
 base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 storage_dir = os.path.join(base_dir, 'storage')
 
-INVAlID_SEARCH_IDX = -1
+INVALID_IDX = -1
 
 
 class FractCola(WriteOptimizedDS):
@@ -37,7 +37,7 @@ class FractCola(WriteOptimizedDS):
 
         self.level_start_idxs = np.zeros(self.n_levels, dtype=int)
         for i in range(1, self.n_levels):  # preform prefix sum to get start idxs for the level
-            self.level_start_idxs = self.level_start_idxs[i - 1] + self.level_sizes[i - 1]
+            self.level_start_idxs[i] = self.level_start_idxs[i - 1] + self.level_sizes[i - 1]
 
         # create storage file.
         if os.path.exists(disk_filepath):
@@ -48,13 +48,13 @@ class FractCola(WriteOptimizedDS):
                 os.makedirs(dirname)
         disk = h5py.File(self.disk_filepath, 'w')
         disk.create_dataset('dataset', shape=(self.disk_size,), dtype=np.bool)
-        disk.create_dataset('is_pointer', shape=(self.disk_size,), dtype=np.int)
-        disk.create_dataset('reference', shape=(self.disk_size,), dtype=np.int)
+        disk.create_dataset('is_lookaheads', shape=(self.disk_size,), dtype=np.int)
+        disk.create_dataset('references', shape=(self.disk_size,), dtype=np.int)
         disk.close()
 
         self.disk = h5py.File(self.disk_filepath, 'r+')
         self.data = self.disk['dataset']
-        self.is_lookaheads = self.disk['is_pointer']
+        self.is_lookaheads = self.disk['is_lookaheads']
         self.references = self.disk['references']
         self.n_items = 0
         self.final_insert_level = 0
@@ -82,9 +82,9 @@ class FractCola(WriteOptimizedDS):
             merged_is_lookaheads = np.zeros(shape=merge_size, dtype=bool)
             merged_references = np.zeros(shape=merge_size, dtype=int)
 
-            # perform the merge here.
+            # perform the merge here, we merge to the front of the merge array.
             merged_i, insert_i, level_i = 0, 0, 0
-            leftmost_lookahead_idx = -1
+            leftmost_lookahead_idx = INVALID_IDX
             while insert_i < level_n_items or level_i < n_inserts:
                 if level_data[level_i] <= insert_data[insert_i]:  # insert level items
                     merged_data[merged_i] = level_data[level_i]
@@ -110,6 +110,8 @@ class FractCola(WriteOptimizedDS):
             else:
                 self.level_n_items[i] = merge_size
                 level_end_idx = level_start_idx + merge_size
+
+                # perfrom writes here.
                 self.data[level_start_idx:level_end_idx] = merged_data
                 self.is_lookaheads[level_start_idx:level_end_idx] = merged_is_lookaheads
                 self.references[level_start_idx:level_end_idx] = merged_references
@@ -121,7 +123,8 @@ class FractCola(WriteOptimizedDS):
                 last_insert_level = i
                 next_level_data = merged_data
 
-        # perform the upward insertion of lookahead pointers
+        # perform the upward insertion of lookahead pointers, note that all upper levels were merged
+        # and should not have any items, so we can simply override them.
         for i in reversed(range(last_insert_level)):
             level_n_lookahead = self.level_n_lookaheads[i]
             next_level_size = self.level_sizes[i+1]
@@ -135,10 +138,12 @@ class FractCola(WriteOptimizedDS):
                 break  # no more lookahead pointers to insert.
             lookahead_data = next_level_data[lookahead_references]
 
-            # write to disk
+            # update n_items
             self.level_n_items[i] = n_lookahead
             level_start_idx = self.level_start_idxs[i]
             level_end_idx = level_start_idx + n_lookahead
+
+            # write to disk
             self.data[level_start_idx:level_end_idx] = lookahead_data
             self.is_lookaheads[level_start_idx:level_end_idx] = np.ones(shape=n_lookahead, dtype=bool)
             self.references[level_start_idx:level_end_idx] = lookahead_references
@@ -148,25 +153,25 @@ class FractCola(WriteOptimizedDS):
 
     def query(self, item):
         idx = self._search(item)
-        return idx
+        return idx > INVALID_IDX
 
     def _search(self, item):
         n_search_levels = self.final_insert_level + 1
-        search_start = INVAlID_SEARCH_IDX
-        search_end = INVAlID_SEARCH_IDX
+        search_start = INVALID_IDX
+        search_end = INVALID_IDX
 
         for i in range(n_search_levels):
-            if search_start == INVAlID_SEARCH_IDX:
+            if search_start == INVALID_IDX:
                 search_start = 0
 
             level_n_item = self.level_n_items[i]
-            if search_end == INVAlID_SEARCH_IDX:
+            if search_end == INVALID_IDX:
                 search_end = level_n_item
 
             assert search_start <= search_end
             if search_end - search_start == 0:
-                search_start = INVAlID_SEARCH_IDX
-                search_end = INVAlID_SEARCH_IDX
+                search_start = INVALID_IDX
+                search_end = INVALID_IDX
                 continue
 
             level_start_idx = self.level_start_idxs[i]
@@ -175,7 +180,7 @@ class FractCola(WriteOptimizedDS):
             search_arr = self.data[start_idx:end_idx]
 
             l, r = self.binary_search(search_arr, item)
-            is_found = (l == r) and (l != INVAlID_SEARCH_IDX)
+            is_found = (l == r) and (l != INVALID_IDX)
             if is_found:
                 loc = start_idx + l
                 is_lookahead = self.is_lookaheads[loc]
@@ -186,8 +191,8 @@ class FractCola(WriteOptimizedDS):
                 else:
                     return loc
             else:
-                if l == INVAlID_SEARCH_IDX:
-                    search_start = INVAlID_SEARCH_IDX
+                if l == INVALID_IDX:
+                    search_start = INVALID_IDX
                 else:
                     loc = start_idx + l
                     is_lookahead = self.is_lookaheads[loc]
@@ -195,14 +200,14 @@ class FractCola(WriteOptimizedDS):
                     if is_lookahead:
                         search_start = reference
                     else:
-                        if reference == INVAlID_SEARCH_IDX:
-                            search_start = INVAlID_SEARCH_IDX
+                        if reference == INVALID_IDX:
+                            search_start = INVALID_IDX
                         else:
                             loc = level_start_idx + reference
                             search_start = self.references[loc]
 
-                if r == INVAlID_SEARCH_IDX:
-                    search_end = INVAlID_SEARCH_IDX
+                if r == INVALID_IDX:
+                    search_end = INVALID_IDX
                 else:
                     loc = start_idx + r
                     is_lookahead = self.is_lookaheads[loc]
@@ -210,7 +215,7 @@ class FractCola(WriteOptimizedDS):
                     if is_lookahead:
                         search_end = reference
                     else:
-                        search_end = INVAlID_SEARCH_IDX
+                        search_end = INVALID_IDX
                         is_lookaheads = self.is_lookaheads[level_start_idx+r+1:level_start_idx+level_n_item]
                         for j, is_lookahead in is_lookaheads:
                             if is_lookahead:
@@ -230,10 +235,10 @@ class FractCola(WriteOptimizedDS):
             return last_idx, last_idx
 
         if item > search_arr[-1]:  # if item is bigger than all items
-            return last_idx, INVAlID_SEARCH_IDX
+            return last_idx, INVALID_IDX
 
         if item < search_arr[0]:  # if item is smaller than all items
-            return INVAlID_SEARCH_IDX, 0
+            return INVALID_IDX, 0
 
         l = 0
         h = last_idx
@@ -253,3 +258,6 @@ def main():
     ds = FractCola(disk_filepath=os.path.join(storage_dir, save_filename), block_size=2,
                    n_blocks=2, n_input_data=5000)
 
+
+if __name__ == '__main__':
+    main()
