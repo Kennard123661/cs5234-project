@@ -50,7 +50,8 @@ class LSMTree(WriteOptimizedDS):
         if item in self.memtable:
             return
         self.memtable.add(item)
-        self.bloomfilters[0].add(item)
+        if self.enable_bloomfilter:
+            self.bloomfilters[0].add(item)
         if len(pickle.dumps(self.memtable)) > self.block_size:
             memtable_copy = copy.deepcopy(self.memtable)
             self.dump_to_disk(memtable_copy)
