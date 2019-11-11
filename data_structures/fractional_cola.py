@@ -11,9 +11,9 @@ storage_dir = os.path.join(base_dir, 'storage')
 INVALID_IDX = -1
 
 
-class FractCola(WriteOptimizedDS):
+class FractionalCola(WriteOptimizedDS):
     def __init__(self, disk_filepath, block_size, n_blocks, n_input_data, growth_factor=2, pointer_density=0.1):
-        super(FractCola, self).__init__(disk_filepath, block_size, n_blocks, n_input_data)
+        super(FractionalCola, self).__init__(disk_filepath, block_size, n_blocks, n_input_data)
 
         self.g = int(growth_factor)
         self.p = float(pointer_density)
@@ -276,8 +276,8 @@ class FractCola(WriteOptimizedDS):
 
 def main():
     save_filename = 'cola.hdf5'
-    ds = FractCola(disk_filepath=os.path.join(storage_dir, save_filename), block_size=2,
-                   n_blocks=2, n_input_data=100)
+    ds = FractionalCola(disk_filepath=os.path.join(storage_dir, save_filename), block_size=2,
+                        n_blocks=2, n_input_data=100)
 
     for i in range(100):
         ds.insert(i)
