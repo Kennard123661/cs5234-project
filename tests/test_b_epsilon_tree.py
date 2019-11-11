@@ -161,7 +161,7 @@ def test_b_epsilon_tree_branch_split_inserts(test_folder):
     assert not tree.query(n)
 
 def test_b_epsilon_tree_large_inserts(test_folder):
-    n = 100000
+    n = int(1e6)
     tree = BEpsilonTree(test_folder)
     for i in range(n):
         tree.insert(i)

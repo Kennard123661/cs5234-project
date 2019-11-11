@@ -10,12 +10,16 @@ sortedcontainers = "*"
 h5py = "*"
 binary-search = "*"
 pybloom-live = "*"
+pandas = "*"
 
 [dev-packages]
 pylint = "*"
 pytest = "*"
-autopep8 = "*"
 pytest-cov = "*"
+autopep8 = "*"
+sacred = "*"
+pymongo = "*"
+v = {editable = true,version = "*"}
 
 [requires]
 python_version = "3.6"

@@ -23,7 +23,7 @@ class WriteOptimizedDS(ABC):
 
     @abstractmethod
     def query(self, item):
-        """ this function should return the pointer/index of the item or -1 if the item does not exist"""
+        """ this function should return True if the item exist or False otherwise"""
         pass
 
 
