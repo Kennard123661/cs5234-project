@@ -140,7 +140,7 @@ class FractCola(WriteOptimizedDS):
                 last_insert_level = i
                 next_level_data = merged_data
                 break
-        print(merged_data)
+
         # perform the upward insertion of lookahead pointers, note that all upper levels were merged
         # and should not have any items, so we can simply override them.
         for i in reversed(range(last_insert_level)):
@@ -270,7 +270,7 @@ class FractCola(WriteOptimizedDS):
             elif item < search_arr[mid]:
                 h = mid
             else:  # item > search_arr[mid]
-                l = search_arr[mid]
+                l = mid
         return l, h
 
 
@@ -283,19 +283,20 @@ def main():
         ds.insert(i)
 
     is_all_found = True
+    print(ds.level_n_items)
+    print(ds.level_sizes)
+    print(ds.level_start_idxs)
     for i in range(100):
         is_found = False
         for j, item in enumerate(ds.data):
             if item == i and not ds.is_lookaheads[j]:
                 is_found = True
-                print('found {}'.format(i))
                 break
         is_all_found &= is_found
     print(is_all_found)
-    print(len(ds.data))
 
     for i in range(100):
-        print(ds.query(i) > -1)
+        print(ds.query(i))
 
 
 if __name__ == '__main__':
