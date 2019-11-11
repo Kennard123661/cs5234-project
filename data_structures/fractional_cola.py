@@ -174,7 +174,7 @@ class FractionalCola(WriteOptimizedDS):
 
     def query(self, item):
         idx = self._search(item)
-        return idx
+        return idx > INVALID_IDX
 
     def _search(self, item):
         n_search_levels = self.final_insert_level + 1
