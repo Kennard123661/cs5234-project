@@ -10,6 +10,7 @@ sortedcontainers = "*"
 h5py = "*"
 binary-search = "*"
 pybloom-live = "*"
+pandas = "*"
 
 [dev-packages]
 pylint = "*"
