@@ -13,26 +13,30 @@ INVALID_IDX = -1
 ERROR_RATE = 1e-3
 
 
-class FractionalCola(WriteOptimizedDS):
+class FractionalBloomCola(WriteOptimizedDS):
     def __init__(self, disk_filepath, block_size, n_blocks, n_input_data, growth_factor=2, pointer_density=0.1):
-        super(FractionalCola, self).__init__(disk_filepath, block_size, n_blocks, n_input_data)
+        super(FractionalBloomCola, self).__init__(
+            disk_filepath, block_size, n_blocks, n_input_data)
 
         self.g = int(growth_factor)
         self.p = float(pointer_density)
-        self.bloom_filter = BloomFilter(capacity=self.n_input_data, error_rate=ERROR_RATE)
+        self.bloom_filter = BloomFilter(
+            capacity=self.n_input_data, error_rate=ERROR_RATE)
 
         # compute the number of levels needed to store all input data
         self.n_levels = 1
         n_elements = 1
         while n_elements < self.n_input_data:
             level_size = 2 * (self.g - 1) * self.g**(self.n_levels - 1)
-            level_n_lookahead = int(math.floor(2 * self.p * (self.g - 1) * self.g ** (self.n_levels - 1)))
+            level_n_lookahead = int(math.floor(
+                2 * self.p * (self.g - 1) * self.g ** (self.n_levels - 1)))
             n_elements += (level_size - level_n_lookahead)
             self.n_levels += 1
         self.n_levels += 1
 
         # compute the number of lookahead pointers
-        self.level_sizes = [1] + [(2 * (self.g - 1) * self.g**(i - 1)) for i in range(1, self.n_levels)]
+        self.level_sizes = [1] + [(2 * (self.g - 1) * self.g**(i - 1))
+                                  for i in range(1, self.n_levels)]
         self.level_n_lookaheads = [0] + [int(math.floor(2 * self.p * (self.g - 1) * self.g ** (i - 1)))
                                          for i in range(1, self.n_levels)]
 
@@ -41,7 +45,8 @@ class FractionalCola(WriteOptimizedDS):
 
         self.level_start_idxs = np.zeros(self.n_levels, dtype=int)
         for i in range(1, self.n_levels):  # preform prefix sum to get start idxs for the level
-            self.level_start_idxs[i] = self.level_start_idxs[i - 1] + self.level_sizes[i - 1]
+            self.level_start_idxs[i] = self.level_start_idxs[i -
+                                                             1] + self.level_sizes[i - 1]
 
         # create storage file.
         if os.path.exists(disk_filepath):
@@ -52,8 +57,10 @@ class FractionalCola(WriteOptimizedDS):
                 os.makedirs(dirname)
         disk = h5py.File(self.disk_filepath, 'w')
         disk.create_dataset('dataset', shape=(self.disk_size,), dtype=np.int)
-        disk.create_dataset('is_lookaheads', shape=(self.disk_size,), dtype=np.bool)
-        disk.create_dataset('references', shape=(self.disk_size,), dtype=np.int)
+        disk.create_dataset('is_lookaheads', shape=(
+            self.disk_size,), dtype=np.bool)
+        disk.create_dataset('references', shape=(
+            self.disk_size,), dtype=np.int)
         disk.close()
 
         self.disk = h5py.File(self.disk_filepath, 'r+')
@@ -94,7 +101,8 @@ class FractionalCola(WriteOptimizedDS):
                 if level_data[level_i] <= insert_data[insert_i]:  # insert level items
                     merged_data[merged_i] = level_data[level_i]
                     merged_is_lookaheads[merged_i] = level_is_lookaheads[level_i]
-                    if merged_is_lookaheads[merged_i]:  # if is lookahead pointer, then
+                    # if is lookahead pointer, then
+                    if merged_is_lookaheads[merged_i]:
                         merged_references[merged_i] = level_references[level_i]
                         leftmost_lookahead_idx = merged_i
                     else:  # not lookahead, so point to the nearest lookahead.
@@ -111,22 +119,26 @@ class FractionalCola(WriteOptimizedDS):
             if insert_i < n_inserts:
                 assert level_i == level_n_items
                 merged_data[merged_i:] = insert_data[insert_i:]
-                merged_is_lookaheads[merged_i:] = np.zeros_like(insert_data[insert_i:], dtype=bool)
-                merged_references[merged_i:] = np.ones_like(insert_data[insert_i:], dtype=int) * leftmost_lookahead_idx
+                merged_is_lookaheads[merged_i:] = np.zeros_like(
+                    insert_data[insert_i:], dtype=bool)
+                merged_references[merged_i:] = np.ones_like(
+                    insert_data[insert_i:], dtype=int) * leftmost_lookahead_idx
             elif level_i < level_n_items:
                 assert insert_i == n_inserts
                 merged_data[merged_i:] = level_data[level_i:]
                 merged_is_lookaheads[merged_i:] = level_is_lookaheads[level_i:]
                 for j, is_lookahead in enumerate(level_is_lookaheads[level_i:]):
                     if is_lookahead:
-                        merged_references[merged_i+j] = level_references[level_i+j]
+                        merged_references[merged_i +
+                                          j] = level_references[level_i+j]
                         leftmost_lookahead_idx = level_i + j
                     else:
                         merged_references[merged_i+j] = leftmost_lookahead_idx
 
             if level_n_items + n_inserts > level_size:  # it will be full, grab all non-pointers
                 self.level_n_items[i] = 0
-                data_idxs = np.argwhere(np.bitwise_not(merged_is_lookaheads)).reshape(-1)
+                data_idxs = np.argwhere(np.bitwise_not(
+                    merged_is_lookaheads)).reshape(-1)
                 insert_data = merged_data[data_idxs]
                 n_inserts = len(insert_data)
             else:
@@ -158,7 +170,8 @@ class FractionalCola(WriteOptimizedDS):
             assert len(next_level_data) == next_level_n_items
 
             lookahead_stride = next_level_size // level_n_lookahead
-            lookahead_references = [ref for ref in range(lookahead_stride-1, next_level_n_items, lookahead_stride)]
+            lookahead_references = [ref for ref in range(
+                lookahead_stride-1, next_level_n_items, lookahead_stride)]
             n_lookahead = len(lookahead_references)
             if n_lookahead == 0:
                 break  # no more lookahead pointers to insert.
@@ -171,7 +184,8 @@ class FractionalCola(WriteOptimizedDS):
 
             # write to disk
             self.data[level_start_idx:level_end_idx] = lookahead_data
-            self.is_lookaheads[level_start_idx:level_end_idx] = np.ones(shape=n_lookahead, dtype=bool)
+            self.is_lookaheads[level_start_idx:level_end_idx] = np.ones(
+                shape=n_lookahead, dtype=bool)
             self.references[level_start_idx:level_end_idx] = lookahead_references
 
             # update for next iteration
@@ -245,7 +259,8 @@ class FractionalCola(WriteOptimizedDS):
                         search_end = reference
                     else:
                         search_end = INVALID_IDX
-                        is_lookaheads = self.is_lookaheads[level_start_idx+r+1:level_start_idx+level_n_item]
+                        is_lookaheads = self.is_lookaheads[level_start_idx +
+                                                           r+1:level_start_idx+level_n_item]
                         for j, is_lookahead in enumerate(is_lookaheads):
                             if is_lookahead:
                                 reference = self.references[level_start_idx+r+1+j]
@@ -284,8 +299,8 @@ class FractionalCola(WriteOptimizedDS):
 
 def main():
     save_filename = 'cola.hdf5'
-    ds = FractionalCola(disk_filepath=os.path.join(storage_dir, save_filename), block_size=2,
-                        n_blocks=2, n_input_data=100000)
+    ds = FractionalBloomCola(disk_filepath=os.path.join(storage_dir, save_filename), block_size=2,
+                             n_blocks=2, n_input_data=100000)
     n_iterations = 0
     for i in np.random.permutation(int(1e6)):
         n_iterations += 1
