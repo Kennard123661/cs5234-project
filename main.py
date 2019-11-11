@@ -73,8 +73,8 @@ def run(_run):
             pre_time = post
     df = pd.DataFrame(data=results, columns=['type', 'time'])
     df.index.name = 'id'
-    df.to_csv('Results.csv')
-    _run.add_artifact('Results.csv')
+    df.to_csv('./experiments/Results.csv')
+    _run.add_artifact('./experiments/Results.csv')
 
 
 if __name__ == '__main__':
