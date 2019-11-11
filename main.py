@@ -1,4 +1,4 @@
-from data_structures import BEpsilonTree, LSMTree, BasicCola
+from data_structures import BEpsilonTree, LSMTree, BasicCola, FractionalCola
 from sacred import Experiment
 from sacred.observers import MongoObserver
 from time import perf_counter
@@ -22,11 +22,13 @@ def get_wods(wods_type, block_size, n_blocks, n_input_data):
     if wods_type == 'b_epsilon_tree':
         return BEpsilonTree(disk_filepath=path, **params)
     elif wods_type == 'lsm_tree':
-        return LSMTree(disk_filepath=path, enable_bloomfilter=False, growth_factor=8, **params)
+        return LSMTree(disk_filepath=path, enable_bloomfilter=False, growth_factor=10, **params)
     elif wods_type == 'lsm_bf_tree':
-        return LSMTree(disk_filepath=path, enable_bloomfilter=True, growth_factor=8, **params)
+        return LSMTree(disk_filepath=path, enable_bloomfilter=True, growth_factor=10, **params)
     elif wods_type == 'basic_cola':
         return BasicCola(disk_filepath=path, **params)
+    elif wods_type == 'fractional_cola':
+        return FractionalCola(disk_filepath=path, **params)
 
 
 @ex.capture
@@ -79,7 +81,7 @@ if __name__ == '__main__':
     generic_params = [{
         'block_size': 4096,
         'n_blocks': 64,
-        'n_input_data': int(1e5),
+        'n_input_data': int(1e6),
     }]
     data_params = [
         {
@@ -111,8 +113,13 @@ if __name__ == '__main__':
         },
         {
             'wods_type': 'basic_cola',
-        }
+        },
+        {
+            'wods_type': 'fractional_cola',
+        },
     ]
+    # config = {**generic_params[0], **data_params[0], **wods_params[4]}
+    # ex.run(config_updates=config)
     configs = [{**d1, **d2, **d3} for d1, d2, d3 in itertools.product(generic_params, data_params, wods_params)]
     for config in configs:
         ex.run(config_updates=config)
