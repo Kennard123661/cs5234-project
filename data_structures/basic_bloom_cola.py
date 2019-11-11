@@ -79,7 +79,7 @@ class BasicBloomCola(WriteOptimizedDS):
                     merged_data[merged_i] = level_data[level_i]
                     level_i += 1
                 else:
-                    merged_data[merged_i] = insert_data[level_i]
+                    merged_data[merged_i] = insert_data[insert_i]
                     insert_i += 1
                 merged_i += 1
 
