@@ -149,7 +149,7 @@ class FractCola(WriteOptimizedDS):
 
             next_level_size = self.level_sizes[i+1]
             next_level_n_items = self.level_n_items[i+1]
-            assert len(next_level_data) == next_level_size
+            assert len(next_level_data) == next_level_n_items
 
             lookahead_stride = next_level_size // level_n_lookahead
             lookahead_references = [ref for ref in range(lookahead_stride-1, next_level_n_items, lookahead_stride)]
@@ -237,7 +237,7 @@ class FractCola(WriteOptimizedDS):
                     else:
                         search_end = INVALID_IDX
                         is_lookaheads = self.is_lookaheads[level_start_idx+r+1:level_start_idx+level_n_item]
-                        for j, is_lookahead in is_lookaheads:
+                        for j, is_lookahead in enumerate(is_lookaheads):
                             if is_lookahead:
                                 reference = self.references[level_start_idx+r+1+j]
                                 search_end = reference
@@ -276,22 +276,13 @@ class FractCola(WriteOptimizedDS):
 def main():
     save_filename = 'cola.hdf5'
     ds = FractCola(disk_filepath=os.path.join(storage_dir, save_filename), block_size=2,
-                   n_blocks=2, n_input_data=4)
-    ds.insert(1)
-    ds.insert(2)
-    ds.insert(3)
-    ds.insert(0)
-    print(ds.level_n_items)
-    search_idx = ds.query(0)
-    print(search_idx)
-    search_idx = ds.query(1)
-    print(search_idx)
-    search_idx = ds.query(2)
-    print(search_idx)
-    search_idx = ds.query(3)
-    print(search_idx)
-    search_idx = ds.query(5)
-    print(search_idx)
+                   n_blocks=2, n_input_data=100)
+
+    for i in range(100):
+        ds.insert(i)
+
+    for i in range(100):
+        print(ds.query(i) > -1)
 
 
 if __name__ == '__main__':
