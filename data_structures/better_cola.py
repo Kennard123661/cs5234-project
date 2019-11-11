@@ -23,17 +23,17 @@ class FractCola(WriteOptimizedDS):
         n_elements = 1
         while n_elements < self.n_input_data:
             level_size = 2 * (self.g - 1) * self.g**(self.n_levels - 1)
-            level_n_lookahead = int(math.ceil(2 * self.p * (self.g - 1) * self.g ** (self.n_levels - 1)))
+            level_n_lookahead = int(math.floor(2 * self.p * (self.g - 1) * self.g ** (self.n_levels - 1)))
             n_elements += (level_size - level_n_lookahead)
             self.n_levels += 1
 
         # compute the number of lookahead pointers
         self.level_sizes = [1] + [(2 * (self.g - 1) * self.g**(i - 1)) for i in range(1, self.n_levels)]
-        self.level_n_lookaheads = [0] + [int(math.ceil(2 * self.p * (self.g - 1) * self.g ** (i - 1)))
+        self.level_n_lookaheads = [0] + [int(math.floor(2 * self.p * (self.g - 1) * self.g ** (i - 1)))
                                          for i in range(1, self.n_levels)]
 
         self.level_n_items = np.zeros(self.n_levels, dtype=int)
-        self.disk_size = np.sum(self.level_sizes) + self.block_size
+        self.disk_size = np.sum(self.level_sizes)
 
         self.level_start_idxs = np.zeros(self.n_levels, dtype=int)
         for i in range(1, self.n_levels):  # preform prefix sum to get start idxs for the level
@@ -47,8 +47,8 @@ class FractCola(WriteOptimizedDS):
             if not os.path.exists(dirname):
                 os.makedirs(dirname)
         disk = h5py.File(self.disk_filepath, 'w')
-        disk.create_dataset('dataset', shape=(self.disk_size,), dtype=np.bool)
-        disk.create_dataset('is_lookaheads', shape=(self.disk_size,), dtype=np.int)
+        disk.create_dataset('dataset', shape=(self.disk_size,), dtype=np.int)
+        disk.create_dataset('is_lookaheads', shape=(self.disk_size,), dtype=np.bool)
         disk.create_dataset('references', shape=(self.disk_size,), dtype=np.int)
         disk.close()
 
@@ -74,6 +74,8 @@ class FractCola(WriteOptimizedDS):
             level_end_idx = level_start_idx + level_n_items
 
             level_data = self.data[level_start_idx:level_end_idx]
+            print('level')
+            print(level_data)
             level_is_lookaheads = self.is_lookaheads[level_start_idx:level_end_idx]
             level_references = self.references[level_start_idx:level_end_idx]
 
@@ -104,11 +106,13 @@ class FractCola(WriteOptimizedDS):
 
             if insert_i < n_inserts:
                 assert level_i == level_n_items
+                print(insert_data[insert_i:])
                 merged_data[merged_i:] = insert_data[insert_i:]
                 merged_is_lookaheads[merged_i:] = np.zeros_like(insert_data[insert_i:], dtype=bool)
                 merged_references[merged_i:] = np.ones_like(insert_data[insert_i:], dtype=int) * leftmost_lookahead_idx
             elif level_i < level_n_items:
                 assert insert_i == n_inserts
+                print(level_data[level_i:])
                 merged_data[merged_i:] = level_data[level_i:]
                 merged_is_lookaheads[merged_i:] = level_is_lookaheads[level_i:]
                 for j, is_lookahead in enumerate(level_is_lookaheads[level_i:]):
@@ -117,18 +121,26 @@ class FractCola(WriteOptimizedDS):
                         leftmost_lookahead_idx = level_i + j
                     else:
                         merged_data[merged_i+j] = leftmost_lookahead_idx
+            print('insert')
+            print(insert_data)
+            print('merged')
+            print(merged_data)
 
             if level_n_items + n_inserts > level_size:  # it will be full, grab all non-pointers
                 self.level_n_items[i] = 0
                 data_idxs = np.argwhere(np.bitwise_not(merged_is_lookaheads)).reshape(-1)
                 insert_data = merged_data[data_idxs]
                 n_inserts = len(insert_data)
+                print('final-insert')
+                print(insert_data)
             else:
                 self.level_n_items[i] = merge_size
                 level_end_idx = level_start_idx + merge_size
 
                 # perfrom writes here.
                 self.data[level_start_idx:level_end_idx] = merged_data
+                print('yeet')
+                print(self.data[level_start_idx:level_end_idx])
                 self.is_lookaheads[level_start_idx:level_end_idx] = merged_is_lookaheads
                 self.references[level_start_idx:level_end_idx] = merged_references
 
@@ -276,7 +288,7 @@ class FractCola(WriteOptimizedDS):
 def main():
     save_filename = 'cola.hdf5'
     ds = FractCola(disk_filepath=os.path.join(storage_dir, save_filename), block_size=2,
-                   n_blocks=2, n_input_data=5000)
+                   n_blocks=2, n_input_data=4)
     ds.insert(1)
     ds.insert(2)
     ds.insert(3)
