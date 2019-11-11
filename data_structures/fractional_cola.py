@@ -97,7 +97,8 @@ class FractionalCola(WriteOptimizedDS):
                         merged_references[merged_i] = leftmost_lookahead_idx
                     level_i += 1
                 else:
-                    merged_data[merged_i] = insert_data[level_i]
+                    merged_data[merged_i] = insert_data[insert_i]
+
                     merged_is_lookaheads[merged_i] = False
                     merged_references[merged_i] = leftmost_lookahead_idx
                     insert_i += 1
@@ -277,16 +278,18 @@ class FractionalCola(WriteOptimizedDS):
 def main():
     save_filename = 'cola.hdf5'
     ds = FractionalCola(disk_filepath=os.path.join(storage_dir, save_filename), block_size=2,
-                        n_blocks=2, n_input_data=100)
-
-    for i in range(100):
+                        n_blocks=2, n_input_data=100000)
+    n_iterations = 0
+    for i in np.random.permutation(int(1e6)):
+        n_iterations += 1
+        # print(n_iterations)
         ds.insert(i)
 
     is_all_found = True
     print(ds.level_n_items)
     print(ds.level_sizes)
     print(ds.level_start_idxs)
-    for i in range(100):
+    for i in np.random.permutation(100000):
         is_found = False
         for j, item in enumerate(ds.data):
             if item == i and not ds.is_lookaheads[j]:
