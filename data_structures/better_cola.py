@@ -74,8 +74,6 @@ class FractCola(WriteOptimizedDS):
             level_end_idx = level_start_idx + level_n_items
 
             level_data = self.data[level_start_idx:level_end_idx]
-            print('level')
-            print(level_data)
             level_is_lookaheads = self.is_lookaheads[level_start_idx:level_end_idx]
             level_references = self.references[level_start_idx:level_end_idx]
 
@@ -106,13 +104,11 @@ class FractCola(WriteOptimizedDS):
 
             if insert_i < n_inserts:
                 assert level_i == level_n_items
-                print(insert_data[insert_i:])
                 merged_data[merged_i:] = insert_data[insert_i:]
                 merged_is_lookaheads[merged_i:] = np.zeros_like(insert_data[insert_i:], dtype=bool)
                 merged_references[merged_i:] = np.ones_like(insert_data[insert_i:], dtype=int) * leftmost_lookahead_idx
             elif level_i < level_n_items:
                 assert insert_i == n_inserts
-                print(level_data[level_i:])
                 merged_data[merged_i:] = level_data[level_i:]
                 merged_is_lookaheads[merged_i:] = level_is_lookaheads[level_i:]
                 for j, is_lookahead in enumerate(level_is_lookaheads[level_i:]):
@@ -120,27 +116,19 @@ class FractCola(WriteOptimizedDS):
                         merged_references[merged_i+j] = level_references[level_i+j]
                         leftmost_lookahead_idx = level_i + j
                     else:
-                        merged_data[merged_i+j] = leftmost_lookahead_idx
-            print('insert')
-            print(insert_data)
-            print('merged')
-            print(merged_data)
+                        merged_references[merged_i+j] = leftmost_lookahead_idx
 
             if level_n_items + n_inserts > level_size:  # it will be full, grab all non-pointers
                 self.level_n_items[i] = 0
                 data_idxs = np.argwhere(np.bitwise_not(merged_is_lookaheads)).reshape(-1)
                 insert_data = merged_data[data_idxs]
                 n_inserts = len(insert_data)
-                print('final-insert')
-                print(insert_data)
             else:
                 self.level_n_items[i] = merge_size
                 level_end_idx = level_start_idx + merge_size
 
                 # perfrom writes here.
                 self.data[level_start_idx:level_end_idx] = merged_data
-                print('yeet')
-                print(self.data[level_start_idx:level_end_idx])
                 self.is_lookaheads[level_start_idx:level_end_idx] = merged_is_lookaheads
                 self.references[level_start_idx:level_end_idx] = merged_references
 
@@ -185,7 +173,7 @@ class FractCola(WriteOptimizedDS):
 
     def query(self, item):
         idx = self._search(item)
-        return idx > INVALID_IDX
+        return idx
 
     def _search(self, item):
         n_search_levels = self.final_insert_level + 1
@@ -301,6 +289,8 @@ def main():
     search_idx = ds.query(2)
     print(search_idx)
     search_idx = ds.query(3)
+    print(search_idx)
+    search_idx = ds.query(5)
     print(search_idx)
 
 
