@@ -73,6 +73,18 @@ def test_lsm_tree_random_inserts(test_folder):
         assert tree.query(i), i
     assert not tree.query(n)
 
+def test_lsm_tree_large_random_inserts(test_folder):
+    n = 100000
+    arr = np.arange(n)
+    rng = np.random.RandomState(42)
+    rng.shuffle(arr)
+    tree = LSMTree(test_folder)
+    for i in arr:
+        tree.insert(i), i
+    for i in np.arange(n):
+        assert tree.query(i), i
+    assert not tree.query(n)
+
 def test_lsm_tree_very_large_inserts(test_folder):
     n = 1000000
     tree = LSMTree(test_folder)

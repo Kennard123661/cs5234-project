@@ -36,7 +36,7 @@ class LSMTree(WriteOptimizedDS):
                 return None
             return self.uuids[idx]
 
-    def __init__(self, disk_filepath, growth_factor=10, enable_bloomfilter=True, bloomfilter_params={'initial_capacity': 3000, 'error_rate': 0.01}, block_size=4096, n_blocks=64, n_input_data=1000):
+    def __init__(self, disk_filepath, growth_factor=10, enable_bloomfilter=True, bloomfilter_params={'initial_capacity': 3000, 'error_rate': 0.001}, block_size=4096, n_blocks=64, n_input_data=1000):
         super().__init__(disk_filepath, block_size, n_blocks, n_input_data)
         self.growth_factor = growth_factor
         self.memtable = SortedList()
@@ -145,8 +145,8 @@ class LSMTree(WriteOptimizedDS):
             level, uuid) for uuid in curr_level_meta.uuids]
         curr_data = [val for sublist in curr_data_list for val in sublist]
         # Find the indices of the overlapping data in the next level
-        next_start_idx = next_level_meta.first_indices.bisect_left(curr_data[0])
-        next_end_idx = next_level_meta.first_indices.bisect_left(curr_data[-1])
+        next_start_idx = max(next_level_meta.first_indices.bisect_left(curr_data[0]) - 1, 0)
+        next_end_idx = next_level_meta.first_indices.bisect_right(curr_data[-1])
         # Get the data in the next level that overlaps this level
         next_data_list = [self.get_level_data(
             level + 1, uuid) for uuid in next_level_meta.uuids[next_start_idx: next_end_idx]]
@@ -163,16 +163,16 @@ class LSMTree(WriteOptimizedDS):
                 all_sorted_data.append(curr_data[i])
                 i += 1
             else:
-                all_sorted_data.append(next_data[i])
+                all_sorted_data.append(next_data[j])
                 j += 1
         while i < len(curr_data):
             all_sorted_data.append(curr_data[i])
             i += 1
         while j < len(next_data):
-            all_sorted_data.append(next_data[i])
+            all_sorted_data.append(next_data[j])
             j += 1
         # Break up sorted data into individual files
-        for i in range(len(all_sorted_data) // (self.block_size // 2)):
+        for i in range(len(all_sorted_data) // (self.block_size // 2) + 1):
             new_data = all_sorted_data[i*(self.block_size // 2):(i+1)*(self.block_size // 2)]
             if len(new_data) == 0:
                 continue
