@@ -79,3 +79,10 @@ def test_lsm_tree_very_large_inserts(test_folder):
     for i in range(n):
         tree.insert(i), i
     assert not tree.query(n)
+
+def test_lsm_tree_reverse_inserts(test_folder):
+    n = 1000000
+    tree = LSMTree(test_folder)
+    for i in reversed(range(n)):
+        tree.insert(i), i
+    assert not tree.query(n)

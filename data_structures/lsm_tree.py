@@ -46,7 +46,8 @@ class LSMTree(WriteOptimizedDS):
             os.makedirs(disk_filepath)
         if self.enable_bloomfilter:
             self.bloomfilters = {}
-            self.bloomfilters[0] = ScalableBloomFilter(**self.bloomfilter_params)
+            self.bloomfilters[0] = ScalableBloomFilter(
+                **self.bloomfilter_params)
 
     def insert(self, item):
         if item in self.memtable:
@@ -134,7 +135,8 @@ class LSMTree(WriteOptimizedDS):
             self.set_level_metadata(level, curr_level_meta)
             if self.enable_bloomfilter:
                 self.bloomfilters[level + 1] = self.bloomfilters[level]
-                self.bloomfilters[level] = ScalableBloomFilter(**self.bloomfilter_params)
+                self.bloomfilters[level] = ScalableBloomFilter(
+                    **self.bloomfilter_params)
             return
         # Current level is full and next level is not empty
         next_level_meta = self.get_level_metadata(level + 1)
@@ -144,16 +146,15 @@ class LSMTree(WriteOptimizedDS):
         # Find the range of data that overlaps
         curr_range = (curr_data_list[0][0], curr_data_list[-1][-1])
         # Find the indices of the overlapping data in the next level
-        next_start_idx = max(
-            next_level_meta.first_indices.bisect_left(curr_range[0]) - 1, 0)
+        next_start_idx = next_level_meta.first_indices.bisect_left(curr_range[0])
         next_end_idx = next_level_meta.first_indices.bisect_left(curr_range[1])
         # Get the data in the next level that overlaps this level
         next_data_list = [self.get_level_data(
-            level + 1, uuid) for uuid in next_level_meta.uuids[next_start_idx: next_end_idx + 1]]
+            level + 1, uuid) for uuid in next_level_meta.uuids[next_start_idx: next_end_idx]]
         # Delete the data of the next level that was retrieved in the folder and in the metadata
-        next_level_meta.clear(next_start_idx, next_end_idx + 1)
         [self.del_level_data(level + 1, uuid)
-         for uuid in next_level_meta.uuids[next_start_idx: next_end_idx + 1]]
+            for uuid in next_level_meta.uuids[next_start_idx: next_end_idx]]
+        next_level_meta.clear(next_start_idx, next_end_idx)
         # Merge the data in this level and the overlapping data in the next level
         all_sorted_data = SortedList()
         for data in curr_data_list + next_data_list:
@@ -174,8 +175,10 @@ class LSMTree(WriteOptimizedDS):
         self.clear_level(level)
         # Merge bloom filters
         if self.enable_bloomfilter:
-            self.bloomfilters[level + 1] = self.bloomfilters[level + 1].union(self.bloomfilters[level])
-            self.bloomfilters[level] = ScalableBloomFilter(**self.bloomfilter_params)
+            self.bloomfilters[level + 1] = self.bloomfilters[level +
+                                                             1].union(self.bloomfilters[level])
+            self.bloomfilters[level] = ScalableBloomFilter(
+                **self.bloomfilter_params)
         # Compact the next level
         self.compact(level + 1)
 
