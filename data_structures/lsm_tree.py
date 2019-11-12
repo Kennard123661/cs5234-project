@@ -31,10 +31,10 @@ class LSMTree(WriteOptimizedDS):
                 del self.first_indices[i:j]
 
         def get_uuid(self, item):
-            idx = self.first_indices.bisect_right(item)
-            if idx == 0:
+            idx = self.first_indices.bisect_right(item) - 1
+            if idx < 0:
                 return None
-            return self.uuids[idx - 1]
+            return self.uuids[idx]
 
     def __init__(self, disk_filepath, growth_factor=10, enable_bloomfilter=True, bloomfilter_params={'initial_capacity': 3000, 'error_rate': 0.01}, block_size=4096, n_blocks=64, n_input_data=1000):
         super().__init__(disk_filepath, block_size, n_blocks, n_input_data)
@@ -55,8 +55,8 @@ class LSMTree(WriteOptimizedDS):
         self.memtable.add(item)
         if self.enable_bloomfilter:
             self.bloomfilters[0].add(item)
-        if len(pickle.dumps(self.memtable)) > self.block_size:
-            memtable_copy = copy.deepcopy(self.memtable)
+        if len(self.memtable) >= self.block_size // 2:
+            memtable_copy = list(self.memtable)
             self.dump_to_disk(memtable_copy)
             self.memtable.clear()
 
@@ -143,32 +143,43 @@ class LSMTree(WriteOptimizedDS):
         # Get all data in the current level
         curr_data_list = [self.get_level_data(
             level, uuid) for uuid in curr_level_meta.uuids]
-        # Find the range of data that overlaps
-        curr_range = (curr_data_list[0][0], curr_data_list[-1][-1])
+        curr_data = [val for sublist in curr_data_list for val in sublist]
         # Find the indices of the overlapping data in the next level
-        next_start_idx = next_level_meta.first_indices.bisect_left(curr_range[0])
-        next_end_idx = next_level_meta.first_indices.bisect_left(curr_range[1])
+        next_start_idx = next_level_meta.first_indices.bisect_left(curr_data[0])
+        next_end_idx = next_level_meta.first_indices.bisect_left(curr_data[-1])
         # Get the data in the next level that overlaps this level
         next_data_list = [self.get_level_data(
             level + 1, uuid) for uuid in next_level_meta.uuids[next_start_idx: next_end_idx]]
+        next_data = [val for sublist in next_data_list for val in sublist]
         # Delete the data of the next level that was retrieved in the folder and in the metadata
         [self.del_level_data(level + 1, uuid)
             for uuid in next_level_meta.uuids[next_start_idx: next_end_idx]]
         next_level_meta.clear(next_start_idx, next_end_idx)
         # Merge the data in this level and the overlapping data in the next level
-        all_sorted_data = SortedList()
-        for data in curr_data_list + next_data_list:
-            all_sorted_data.update(data)
+        all_sorted_data = []
+        i = j = 0
+        while i < len(curr_data) and j < len(next_data):
+            if curr_data[i] < next_data[j]:
+                all_sorted_data.append(curr_data[i])
+                i += 1
+            else:
+                all_sorted_data.append(next_data[i])
+                j += 1
+        while i < len(curr_data):
+            all_sorted_data.append(curr_data[i])
+            i += 1
+        while j < len(next_data):
+            all_sorted_data.append(next_data[i])
+            j += 1
         # Break up sorted data into individual files
-        curr_data = SortedList()
-        for i in all_sorted_data:
-            curr_data.add(i)
-            if len(pickle.dumps(curr_data)) > self.block_size:
-                uuid = str(uuid4())
-                first_idx = curr_data[0]
-                self.set_level_data(level + 1, uuid, curr_data)
-                curr_data.clear()
-                next_level_meta.insert(uuid, first_idx)
+        for i in range(len(all_sorted_data) // (self.block_size // 2)):
+            new_data = all_sorted_data[i*(self.block_size // 2):(i+1)*(self.block_size // 2)]
+            if len(new_data) == 0:
+                continue
+            uuid = str(uuid4())
+            first_idx = new_data[0]
+            self.set_level_data(level + 1, uuid, new_data)
+            next_level_meta.insert(uuid, first_idx)
         # Write next level metadata
         self.set_level_metadata(level + 1, next_level_meta)
         # Clear this level
