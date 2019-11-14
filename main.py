@@ -1,5 +1,6 @@
 from data_structures import BEpsilonTree, LSMTree, \
-    BasicCola, FractionalCola, BasicBloomCola, FractionalBloomCola
+    BasicCola, FractionalCola, BasicBloomCola, FractionalBloomCola, \
+    BTree
 from sacred import Experiment
 from sacred.observers import MongoObserver
 from time import perf_counter
@@ -23,6 +24,8 @@ def get_wods(wods_type, block_size, n_blocks, n_input_data):
     }
     if wods_type == 'b_epsilon_tree':
         return BEpsilonTree(disk_filepath=path, **params, b=8)
+    elif wods_type == 'b_tree':
+        return BTree(disk_filepath=path, **params, b=8)
     elif wods_type == 'lsm_tree':
         return LSMTree(disk_filepath=path, enable_bloomfilter=False, growth_factor=16, **params)
     elif wods_type == 'lsm_bf_tree':
@@ -142,31 +145,34 @@ if __name__ == '__main__':
 
     ]
     wods_params = [
+        # {
+        #     'wods_type': 'b_epsilon_tree',
+        # },
         {
-            'wods_type': 'b_epsilon_tree',
+            'wods_type': 'b_tree',
         },
-        {
-            'wods_type': 'lsm_tree',
-        },
-        {
-            'wods_type': 'lsm_bf_tree',
-        },
-        {
-            'wods_type': 'basic_cola',
-        },
-        {
-            'wods_type': 'fractional_cola',
-        },
-        {
-            'wods_type': 'basic_bloom_cola',
-        },
-        {
-            'wods_type': 'fractional_bloom_cola',
-        },
+        # {
+        #     'wods_type': 'lsm_tree',
+        # },
+        # {
+        #     'wods_type': 'lsm_bf_tree',
+        # },
+        # {
+        #     'wods_type': 'basic_cola',
+        # },
+        # {
+        #     'wods_type': 'fractional_cola',
+        # },
+        # {
+        #     'wods_type': 'basic_bloom_cola',
+        # }
     ]
     # config = {**generic_params[0], **data_params[0], **wods_params[4]}
     # ex.run(config_updates=config)
     configs = [{**d1, **d2, **d3} for d1, d2,
                d3 in itertools.product(generic_params, data_params, wods_params)]
     for config in configs:
-        ex.run(config_updates=config)
+        try:
+            ex.run(config_updates=config)
+        except:
+            print('Run failed!')
