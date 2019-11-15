@@ -94,78 +94,142 @@ def run(_run):
 
 
 if __name__ == '__main__':
+    # generic_params = [{
+    #     'block_size': 4096,
+    #     'n_blocks': 64,
+    #     'n_input_data': int(1e6),
+    # }]
+    # data_params = [
+    #     {
+    #         'inserts_size': 0.5,
+    #         'random': False,
+    #         'interspersed': False,
+    #         'reversed': False,
+    #     },
+    #     {
+    #         'inserts_size': 0.5,
+    #         'random': False,
+    #         'interspersed': False,
+    #         'reversed': True,
+    #     },
+    #     {
+    #         'inserts_size': 0.5,
+    #         'random': True,
+    #         'interspersed': False,
+    #         'reversed': False,
+    #     },
+    #     {
+    #         'inserts_size': 0.2,
+    #         'random': True,
+    #         'interspersed': True,
+    #         'reversed': False,
+    #     },
+    #     {
+    #         'inserts_size': 0.4,
+    #         'random': True,
+    #         'interspersed': True,
+    #         'reversed': False,
+    #     },
+    #     {
+    #         'inserts_size': 0.6,
+    #         'random': True,
+    #         'interspersed': True,
+    #         'reversed': False,
+    #     },
+    #     {
+    #         'inserts_size': 0.8,
+    #         'random': True,
+    #         'interspersed': True,
+    #         'reversed': False,
+    #     },
+
+    # ]
+    # wods_params = [
+    #     # {
+    #     #     'wods_type': 'b_epsilon_tree',
+    #     # },
+    #     {
+    #         'wods_type': 'b_tree',
+    #     },
+    #     # {
+    #     #     'wods_type': 'lsm_tree',
+    #     # },
+    #     # {
+    #     #     'wods_type': 'lsm_bf_tree',
+    #     # },
+    #     # {
+    #     #     'wods_type': 'basic_cola',
+    #     # },
+    #     # {
+    #     #     'wods_type': 'fractional_cola',
+    #     # },
+    #     # {
+    #     #     'wods_type': 'basic_bloom_cola',
+    #     # }
+    # ]
+    # # config = {**generic_params[0], **data_params[0], **wods_params[4]}
+    # # ex.run(config_updates=config)
+    # configs = [{**d1, **d2, **d3} for d1, d2,
+    #            d3 in itertools.product(generic_params, data_params, wods_params)]
+    # for config in configs:
+    #     try:
+    #         ex.run(config_updates=config)
+    #     except:
+    #         print('Run failed!')
+
     generic_params = [{
         'block_size': 4096,
         'n_blocks': 64,
-        'n_input_data': int(1e6),
+        'inserts_size': 0.5,
+        'random': True,
+        'interspersed': True,
+        'reversed': False,
     }]
     data_params = [
         {
-            'inserts_size': 0.5,
-            'random': False,
-            'interspersed': False,
-            'reversed': False,
+            'n_input_data': int(1e3),
         },
         {
-            'inserts_size': 0.5,
-            'random': False,
-            'interspersed': False,
-            'reversed': True,
+            'n_input_data': int(1e4),
         },
         {
-            'inserts_size': 0.5,
-            'random': True,
-            'interspersed': False,
-            'reversed': False,
+            'n_input_data': int(1e5),
         },
         {
-            'inserts_size': 0.2,
-            'random': True,
-            'interspersed': True,
-            'reversed': False,
+            'n_input_data': int(1e6),
         },
         {
-            'inserts_size': 0.4,
-            'random': True,
-            'interspersed': True,
-            'reversed': False,
+            'n_input_data': int(1e7),
         },
         {
-            'inserts_size': 0.6,
-            'random': True,
-            'interspersed': True,
-            'reversed': False,
+            'n_input_data': int(1e8),
         },
         {
-            'inserts_size': 0.8,
-            'random': True,
-            'interspersed': True,
-            'reversed': False,
+            'n_input_data': int(1e9),
         },
-
     ]
     wods_params = [
-        # {
-        #     'wods_type': 'b_epsilon_tree',
-        # },
+        {
+            'wods_type': 'b_epsilon_tree',
+        },
         {
             'wods_type': 'b_tree',
         },
-        # {
-        #     'wods_type': 'lsm_tree',
-        # },
-        # {
-        #     'wods_type': 'lsm_bf_tree',
-        # },
-        # {
-        #     'wods_type': 'basic_cola',
-        # },
+        {
+            'wods_type': 'lsm_tree',
+        },
+        {
+            'wods_type': 'lsm_bf_tree',
+        },
+        {
+            'wods_type': 'basic_cola',
+        },
         # {
         #     'wods_type': 'fractional_cola',
         # },
-        # {
-        #     'wods_type': 'basic_bloom_cola',
-        # }
+        {
+            'wods_type': 'basic_bloom_cola',
+        }
     ]
     # config = {**generic_params[0], **data_params[0], **wods_params[4]}
     # ex.run(config_updates=config)
